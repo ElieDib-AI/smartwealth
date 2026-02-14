@@ -26,8 +26,18 @@ export async function GET(request: NextRequest) {
       .sort({ createdAt: -1 })
       .toArray()
 
-    // Calculate total balance
-    const totalBalance = accounts.reduce((sum, account) => sum + account.balance, 0)
+    // Calculate total balance (convert all to USD)
+    const EXCHANGE_RATES: Record<string, number> = {
+      AED: 3.6775,
+      EUR: 0.8414,
+      USD: 1.0
+    }
+    
+    const totalBalance = accounts.reduce((sum, account) => {
+      const rate = EXCHANGE_RATES[account.currency] || 1
+      const usdValue = account.balance / rate
+      return sum + usdValue
+    }, 0)
 
     return NextResponse.json({
       success: true,

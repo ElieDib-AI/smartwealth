@@ -19,6 +19,11 @@ export interface CreateTransactionInput {
   date: Date
   status?: 'completed' | 'pending'
   currencyConversion?: CurrencyConversion
+  // Multi-currency support
+  originalAmount?: number
+  originalCurrency?: string
+  usdAmount?: number
+  exchangeRate?: number
 }
 
 export interface UpdateTransactionInput {
@@ -106,6 +111,10 @@ export class TransactionService {
         date: input.date,
         status: input.status || 'completed',
         currencyConversion: input.currencyConversion,
+        originalAmount: input.originalAmount,
+        originalCurrency: input.originalCurrency,
+        usdAmount: input.usdAmount,
+        exchangeRate: input.exchangeRate,
         createdAt: new Date(),
         updatedAt: new Date()
       }

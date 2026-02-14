@@ -28,6 +28,7 @@ interface SidebarProps {
   onEditAccount: (account: Account) => void
   onDeleteAccount: (account: Account) => void
   onRefresh: () => void
+  onAccountClick?: (accountId: string) => void
 }
 
 const navigationItems = [
@@ -47,7 +48,8 @@ export function Sidebar({
   onAddAccount,
   onEditAccount,
   onDeleteAccount,
-  onRefresh
+  onRefresh,
+  onAccountClick
 }: SidebarProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -214,6 +216,7 @@ export function Sidebar({
                   isCollapsed={isCollapsed}
                   onEdit={onEditAccount}
                   onDelete={onDeleteAccount}
+                  onClick={onAccountClick ? () => onAccountClick(account._id.toString()) : undefined}
                 />
               ))
             )}

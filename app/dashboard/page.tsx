@@ -6,14 +6,22 @@ import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { AuthUser } from '@/lib/auth'
+import { Transaction, Account } from '@/lib/types'
+import { TransactionListItem } from '@/components/transactions/transaction-list-item'
+import { ArrowUpRight, ArrowDownRight, ArrowLeftRight } from 'lucide-react'
+import { toast } from 'sonner'
 
 export default function DashboardPage() {
   const router = useRouter()
   const [user, setUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
   const hasCheckedRef = useRef(false)
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
+  const [accountTransactions, setAccountTransactions] = useState<Transaction[]>([])
+  const [loadingTransactions, setLoadingTransactions] = useState(false)
+  const [accounts, setAccounts] = useState<Account[]>([])
 
-  // Check authentication only
+  // Check authentication
   useEffect(() => {
     if (hasCheckedRef.current) return
     hasCheckedRef.current = true
@@ -38,6 +46,61 @@ export default function DashboardPage() {
     checkAuth()
   }, [router])
 
+  // Fetch accounts
+  useEffect(() => {
+    if (user) {
+      fetchAccounts()
+    }
+  }, [user])
+
+  // Fetch transactions when account is selected
+  useEffect(() => {
+    if (selectedAccountId) {
+      fetchAccountTransactions(selectedAccountId)
+    }
+  }, [selectedAccountId])
+
+  const fetchAccounts = async () => {
+    try {
+      const response = await fetch('/api/accounts')
+      const data = await response.json()
+      if (data.success) {
+        setAccounts(data.data.accounts || [])
+      }
+    } catch (error) {
+      console.error('Error fetching accounts:', error)
+    }
+  }
+
+  const fetchAccountTransactions = async (accountId: string) => {
+    setLoadingTransactions(true)
+    try {
+      const response = await fetch(`/api/transactions?accountId=${accountId}&limit=50&sortBy=date&sortOrder=desc`)
+      const data = await response.json()
+      
+      if (data.success) {
+        setAccountTransactions(data.data.transactions || [])
+      }
+    } catch (error) {
+      console.error('Error fetching transactions:', error)
+      toast.error('Failed to load transactions')
+    } finally {
+      setLoadingTransactions(false)
+    }
+  }
+
+  const getAccountName = (accountId: string): string => {
+    const account = accounts.find(a => a._id.toString() === accountId)
+    return account?.name || 'Unknown Account'
+  }
+
+  const formatCurrency = (amount: number, currency: string) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency || 'USD'
+    }).format(amount)
+  }
+
   if (loading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
@@ -49,104 +112,169 @@ export default function DashboardPage() {
     )
   }
 
+  const selectedAccount = accounts.find(a => a._id.toString() === selectedAccountId)
+
   return (
-    <DashboardLayout user={user}>
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Welcome back, {user.name}!</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
-            This is your dashboard. Start building your app features here.
-          </p>
+    <DashboardLayout 
+      user={user}
+      onAccountClick={(accountId) => setSelectedAccountId(accountId)}
+    >
+      <div className="flex gap-6 h-full">
+        {/* Main Content */}
+        <div className={`flex-1 space-y-6 transition-all ${selectedAccountId ? 'max-w-2xl' : 'max-w-7xl mx-auto'}`}>
+          <div>
+            <h1 className="text-3xl font-bold">Welcome back, {user.name}!</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-2">
+              Click on any account in the sidebar to view its transactions
+            </p>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            <Card>
+              <CardHeader>
+                <CardTitle>Getting Started</CardTitle>
+                <CardDescription>
+                  Your template is ready to customize
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  Start building your app by adding features to this dashboard.
+                </p>
+                <Button variant="outline" className="w-full">
+                  View Documentation
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Your Profile</CardTitle>
+                <CardDescription>
+                  Manage your account settings
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  Update your profile information and subscription.
+                </p>
+                <Button 
+                  variant="outline" 
+                  className="w-full"
+                  onClick={() => router.push('/profile')}
+                >
+                  Go to Profile
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Upgrade</CardTitle>
+                <CardDescription>
+                  Unlock premium features
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  Get access to all premium features with our paid plan.
+                </p>
+                <Button 
+                  className="w-full"
+                  onClick={() => router.push('/pricing')}
+                >
+                  View Pricing
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          <Card>
-            <CardHeader>
-              <CardTitle>Getting Started</CardTitle>
-              <CardDescription>
-                Your template is ready to customize
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                Start building your app by adding features to this dashboard.
-              </p>
-              <Button variant="outline" className="w-full">
-                View Documentation
-              </Button>
-            </CardContent>
-          </Card>
+        {/* Account Transactions Panel */}
+        {selectedAccountId && selectedAccount && (
+          <div className="w-[500px] bg-white border-l border-gray-200 h-screen sticky top-0 overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-xl font-bold text-gray-900">{selectedAccount.name}</h2>
+                <button
+                  onClick={() => setSelectedAccountId(null)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600">Balance:</span>
+                <span className="text-2xl font-bold text-gray-900">
+                  {formatCurrency(selectedAccount.balance, selectedAccount.currency)}
+                </span>
+              </div>
+              <div className="mt-2 text-sm text-gray-500">
+                {accountTransactions.length} transactions
+              </div>
+            </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Your Profile</CardTitle>
-              <CardDescription>
-                Manage your account settings
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                Update your profile information and subscription.
-              </p>
-              <Button 
-                variant="outline" 
-                className="w-full"
-                onClick={() => router.push('/profile')}
-              >
-                Go to Profile
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Upgrade</CardTitle>
-              <CardDescription>
-                Unlock premium features
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                Get access to all premium features with our paid plan.
-              </p>
-              <Button 
-                className="w-full"
-                onClick={() => router.push('/pricing')}
-              >
-                View Pricing
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>What's Next?</CardTitle>
-            <CardDescription>
-              Customize your template
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
-              <li className="flex items-start gap-2">
-                <span className="text-primary-600 font-bold">1.</span>
-                <span>Update branding: Find/replace "SmartWealth" with your app name</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-primary-600 font-bold">2.</span>
-                <span>Change colors: Edit CSS variables in app/globals.css</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-primary-600 font-bold">3.</span>
-                <span>Add features: Build your app-specific functionality here</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-primary-600 font-bold">4.</span>
-                <span>Deploy: Push to Vercel, Netlify, or your preferred platform</span>
-              </li>
-            </ul>
-          </CardContent>
-        </Card>
+            <div className="flex-1 overflow-y-auto p-4">
+              {loadingTransactions ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
+                </div>
+              ) : accountTransactions.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-gray-500">No transactions found</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {accountTransactions.map((transaction) => (
+                    <div
+                      key={transaction._id.toString()}
+                      className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            {transaction.type === 'income' && (
+                              <ArrowDownRight className="w-4 h-4 text-green-600" />
+                            )}
+                            {transaction.type === 'expense' && (
+                              <ArrowUpRight className="w-4 h-4 text-red-600" />
+                            )}
+                            {transaction.type === 'transfer' && (
+                              <ArrowLeftRight className="w-4 h-4 text-blue-600" />
+                            )}
+                            <span className="font-medium text-gray-900">
+                              {transaction.description}
+                            </span>
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            {transaction.category}
+                          </div>
+                          <div className="text-xs text-gray-400 mt-1">
+                            {new Date(transaction.date).toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric'
+                            })}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className={`font-semibold ${
+                            transaction.type === 'income' ? 'text-green-600' : 
+                            transaction.type === 'expense' ? 'text-red-600' : 
+                            'text-blue-600'
+                          }`}>
+                            {transaction.type === 'expense' ? '-' : '+'}
+                            {formatCurrency(transaction.amount, transaction.currency)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   )

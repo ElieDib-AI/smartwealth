@@ -15,9 +15,10 @@ import { toast } from 'sonner'
 interface DashboardLayoutProps {
   children: React.ReactNode
   user: AuthUser
+  onAccountClick?: (accountId: string) => void
 }
 
-export function DashboardLayout({ children, user }: DashboardLayoutProps) {
+export function DashboardLayout({ children, user, onAccountClick }: DashboardLayoutProps) {
   const router = useRouter()
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -181,6 +182,7 @@ export function DashboardLayout({ children, user }: DashboardLayoutProps) {
           onEditAccount={handleEditAccount}
           onDeleteAccount={handleDeleteAccount}
           onRefresh={fetchAccounts}
+          onAccountClick={onAccountClick}
         />
 
         {/* Main Content */}

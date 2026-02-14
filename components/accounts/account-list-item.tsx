@@ -27,6 +27,7 @@ interface AccountListItemProps {
   isCollapsed: boolean
   onEdit: (account: Account) => void
   onDelete: (account: Account) => void
+  onClick?: () => void
 }
 
 const accountIcons: Record<AccountType, typeof Wallet> = {
@@ -79,7 +80,8 @@ export function AccountListItem({
   account, 
   isCollapsed, 
   onEdit, 
-  onDelete 
+  onDelete,
+  onClick 
 }: AccountListItemProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -98,7 +100,11 @@ export function AccountListItem({
   }
 
   const handleClick = () => {
-    router.push(`/dashboard/accounts/${account._id.toString()}`)
+    if (onClick) {
+      onClick()
+    } else {
+      router.push(`/dashboard/accounts/${account._id.toString()}`)
+    }
   }
 
   const handleEdit = (e: React.MouseEvent) => {

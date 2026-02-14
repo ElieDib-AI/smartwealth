@@ -106,8 +106,14 @@ export interface Transaction {
   type: TransactionType
   
   // Amount & Currency
-  amount: number
-  currency: string
+  amount: number                // Amount in original currency
+  currency: string              // Original currency (AED, USD, EUR, etc.)
+  
+  // Multi-currency support (for reporting and conversions)
+  originalAmount?: number       // Amount in original currency (same as amount for backward compatibility)
+  originalCurrency?: string     // Original currency (same as currency for backward compatibility)
+  usdAmount?: number           // USD equivalent for cross-currency reporting
+  exchangeRate?: number        // Exchange rate used (original to USD)
   
   // Account References
   accountId: ObjectId           // Source account for expense/transfer, destination for income
@@ -157,3 +163,4 @@ export interface ApiResponse<T = unknown> {
   data?: T
   error?: string
 }
+

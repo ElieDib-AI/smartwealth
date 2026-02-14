@@ -74,7 +74,7 @@ export default function TransactionsPage() {
       const response = await fetch('/api/accounts')
       const data = await response.json()
       if (data.success) {
-        setAccounts(data.data)
+        setAccounts(data.data.accounts || [])
       }
     } catch (error) {
       console.error('Error fetching accounts:', error)
