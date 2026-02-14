@@ -18,16 +18,38 @@ import {
   Wallet,
   PiggyBank,
   CreditCard,
-  Banknote
+  Banknote,
+  Home,
+  Car,
+  Gem,
+  Package,
+  LineChart,
+  Bitcoin
 } from 'lucide-react'
 import { motion } from 'framer-motion'
+import { AccountType } from '@/lib/types'
 
-const accountIcons = {
+const accountIcons: Record<AccountType, typeof Wallet> = {
+  // Bank Accounts
   checking: Wallet,
   savings: PiggyBank,
-  credit: CreditCard,
-  investment: TrendingUp,
-  cash: Banknote
+  cash: Banknote,
+  // Credit & Loans
+  credit_card: CreditCard,
+  personal_loan: Banknote,
+  mortgage: Home,
+  car_loan: Car,
+  student_loan: Package,
+  // Investments
+  stocks: LineChart,
+  retirement: PiggyBank,
+  crypto: Bitcoin,
+  mutual_funds: TrendingUp,
+  // Assets
+  real_estate: Home,
+  vehicle: Car,
+  valuables: Gem,
+  other_assets: Package
 }
 
 export default function AccountDetailPage({ params }: { params: Promise<{ id: string }> }) {

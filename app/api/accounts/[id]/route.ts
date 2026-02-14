@@ -81,10 +81,10 @@ export async function PUT(
     }
 
     const body = await request.json()
-    const { name, type, balance, currency, institution, color, icon } = body
+    const { name, type, category, balance, currency, institution, color, icon } = body
 
     // Validation
-    if (!name || !type || balance === undefined || !currency || !color || !icon) {
+    if (!name || !type || !category || balance === undefined || !currency || !color || !icon) {
       return NextResponse.json(
         { success: false, error: 'Missing required fields' },
         { status: 400 }
@@ -98,10 +98,23 @@ export async function PUT(
       )
     }
 
-    const validTypes = ['checking', 'savings', 'credit', 'investment', 'cash']
+    const validTypes = [
+      'checking', 'savings', 'cash',
+      'credit_card', 'personal_loan', 'mortgage', 'car_loan', 'student_loan',
+      'stocks', 'retirement', 'crypto', 'mutual_funds',
+      'real_estate', 'vehicle', 'valuables', 'other_assets'
+    ]
     if (!validTypes.includes(type)) {
       return NextResponse.json(
         { success: false, error: 'Invalid account type' },
+        { status: 400 }
+      )
+    }
+
+    const validCategories = ['bank', 'credit_loans', 'investments', 'assets']
+    if (!validCategories.includes(category)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid account category' },
         { status: 400 }
       )
     }
@@ -131,6 +144,7 @@ export async function PUT(
     const updateData = {
       name: name.trim(),
       type,
+      category,
       balance,
       currency,
       institution: institution?.trim() || undefined,

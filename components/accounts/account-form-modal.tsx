@@ -12,14 +12,22 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
+import { CustomSelect } from '@/components/ui/custom-select'
 import { Button } from '@/components/ui/button'
-import { Account, AccountType } from '@/lib/types'
+import { Account, AccountType, AccountCategory } from '@/lib/types'
 import { 
   Wallet, 
   PiggyBank, 
   CreditCard, 
   TrendingUp, 
-  Banknote 
+  Banknote,
+  Home,
+  Car,
+  Gem,
+  Package,
+  LineChart,
+  Bitcoin,
+  Building2
 } from 'lucide-react'
 
 interface AccountFormModalProps {
@@ -32,6 +40,7 @@ interface AccountFormModalProps {
 export interface AccountFormData {
   name: string
   type: AccountType
+  category: AccountCategory
   balance: number
   currency: string
   institution?: string
@@ -39,12 +48,51 @@ export interface AccountFormData {
   icon: string
 }
 
-const accountTypes: { value: AccountType; label: string; icon: typeof Wallet }[] = [
-  { value: 'checking', label: 'Checking Account', icon: Wallet },
-  { value: 'savings', label: 'Savings Account', icon: PiggyBank },
-  { value: 'credit', label: 'Credit Card', icon: CreditCard },
-  { value: 'investment', label: 'Investment Account', icon: TrendingUp },
-  { value: 'cash', label: 'Cash', icon: Banknote }
+const accountCategories = [
+  {
+    category: 'bank' as AccountCategory,
+    label: 'Bank Accounts',
+    icon: Building2,
+    types: [
+      { value: 'checking' as AccountType, label: 'Checking Account', icon: Wallet },
+      { value: 'savings' as AccountType, label: 'Savings Account', icon: PiggyBank },
+      { value: 'cash' as AccountType, label: 'Cash/Wallet', icon: Banknote }
+    ]
+  },
+  {
+    category: 'credit_loans' as AccountCategory,
+    label: 'Credit & Loans',
+    icon: CreditCard,
+    types: [
+      { value: 'credit_card' as AccountType, label: 'Credit Card', icon: CreditCard },
+      { value: 'personal_loan' as AccountType, label: 'Personal Loan', icon: Banknote },
+      { value: 'mortgage' as AccountType, label: 'Mortgage', icon: Home },
+      { value: 'car_loan' as AccountType, label: 'Car Loan', icon: Car },
+      { value: 'student_loan' as AccountType, label: 'Student Loan', icon: Package }
+    ]
+  },
+  {
+    category: 'investments' as AccountCategory,
+    label: 'Investments',
+    icon: TrendingUp,
+    types: [
+      { value: 'stocks' as AccountType, label: 'Stocks & Shares', icon: LineChart },
+      { value: 'retirement' as AccountType, label: 'Retirement Account', icon: PiggyBank },
+      { value: 'crypto' as AccountType, label: 'Crypto', icon: Bitcoin },
+      { value: 'mutual_funds' as AccountType, label: 'Mutual Funds', icon: TrendingUp }
+    ]
+  },
+  {
+    category: 'assets' as AccountCategory,
+    label: 'Assets',
+    icon: Home,
+    types: [
+      { value: 'real_estate' as AccountType, label: 'Real Estate/Property', icon: Home },
+      { value: 'vehicle' as AccountType, label: 'Vehicle', icon: Car },
+      { value: 'valuables' as AccountType, label: 'Valuables (Jewelry, Art, etc.)', icon: Gem },
+      { value: 'other_assets' as AccountType, label: 'Other Assets', icon: Package }
+    ]
+  }
 ]
 
 const accountColors = [
@@ -57,11 +105,33 @@ const accountColors = [
 ]
 
 const accountIconsByType: Record<AccountType, string> = {
+  // Bank Accounts
   checking: 'Wallet',
   savings: 'PiggyBank',
-  credit: 'CreditCard',
-  investment: 'TrendingUp',
-  cash: 'Banknote'
+  cash: 'Banknote',
+  // Credit & Loans
+  credit_card: 'CreditCard',
+  personal_loan: 'Banknote',
+  mortgage: 'Home',
+  car_loan: 'Car',
+  student_loan: 'Package',
+  // Investments
+  stocks: 'LineChart',
+  retirement: 'PiggyBank',
+  crypto: 'Bitcoin',
+  mutual_funds: 'TrendingUp',
+  // Assets
+  real_estate: 'Home',
+  vehicle: 'Car',
+  valuables: 'Gem',
+  other_assets: 'Package'
+}
+
+const accountColorsByCategory: Record<AccountCategory, string> = {
+  bank: 'from-cyan-600 to-blue-500',
+  credit_loans: 'from-amber-600 to-orange-500',
+  investments: 'from-indigo-600 to-purple-500',
+  assets: 'from-emerald-600 to-green-500'
 }
 
 export function AccountFormModal({ 
@@ -73,6 +143,7 @@ export function AccountFormModal({
   const [formData, setFormData] = useState<AccountFormData>({
     name: '',
     type: 'checking',
+    category: 'bank',
     balance: 0,
     currency: 'USD',
     institution: '',
@@ -87,6 +158,7 @@ export function AccountFormModal({
       setFormData({
         name: account.name,
         type: account.type,
+        category: account.category,
         balance: account.balance,
         currency: account.currency,
         institution: account.institution || '',
@@ -97,6 +169,7 @@ export function AccountFormModal({
       setFormData({
         name: '',
         type: 'checking',
+        category: 'bank',
         balance: 0,
         currency: 'USD',
         institution: '',
@@ -107,16 +180,13 @@ export function AccountFormModal({
     setErrors({})
   }, [account, open])
 
-  const handleTypeChange = (type: AccountType) => {
+  const handleTypeChange = (type: AccountType, category: AccountCategory) => {
     setFormData(prev => ({
       ...prev,
       type,
+      category,
       icon: accountIconsByType[type],
-      color: type === 'checking' ? 'from-cyan-600 to-blue-500' :
-             type === 'savings' ? 'from-emerald-600 to-green-500' :
-             type === 'credit' ? 'from-amber-600 to-orange-500' :
-             type === 'investment' ? 'from-indigo-600 to-purple-500' :
-             'from-gray-600 to-gray-500'
+      color: accountColorsByCategory[category]
     }))
   }
 
@@ -173,7 +243,7 @@ export function AccountFormModal({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4 py-4">
+        <form onSubmit={handleSubmit} className="space-y-4 px-6 py-4">
           {/* Account Name */}
           <div className="space-y-2">
             <Label htmlFor="name">
@@ -196,17 +266,24 @@ export function AccountFormModal({
             <Label htmlFor="type">
               Account Type <span className="text-red-500">*</span>
             </Label>
-            <Select
+            <CustomSelect
               id="type"
               value={formData.type}
-              onChange={(e) => handleTypeChange(e.target.value as AccountType)}
-            >
-              {accountTypes.map((type) => (
-                <option key={type.value} value={type.value}>
-                  {type.label}
-                </option>
-              ))}
-            </Select>
+              onChange={(selectedType) => {
+                const category = accountCategories.find(cat => 
+                  cat.types.some(t => t.value === selectedType)
+                )?.category || 'bank'
+                handleTypeChange(selectedType as AccountType, category)
+              }}
+              groups={accountCategories.map(cat => ({
+                label: cat.label,
+                options: cat.types.map(t => ({
+                  value: t.value,
+                  label: t.label
+                }))
+              }))}
+              placeholder="Select account type"
+            />
             {errors.type && (
               <p className="text-sm text-red-600 dark:text-red-400">{errors.type}</p>
             )}
@@ -243,6 +320,7 @@ export function AccountFormModal({
               <option value="GBP">GBP - British Pound</option>
               <option value="CAD">CAD - Canadian Dollar</option>
               <option value="AUD">AUD - Australian Dollar</option>
+              <option value="AED">AED - UAE Dirham</option>
             </Select>
           </div>
 

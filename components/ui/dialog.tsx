@@ -89,7 +89,7 @@ export function DialogContent({ children, className }: DialogContentProps) {
       {/* Dialog */}
       <div 
         className={cn(
-          "relative z-50 w-full max-w-lg mx-4 bg-white dark:bg-gray-900 rounded-lg shadow-xl border border-gray-200 dark:border-gray-800",
+          "relative z-50 w-full max-w-lg mx-4 bg-white dark:bg-white rounded-lg shadow-xl border border-gray-200 dark:border-gray-300",
           className
         )}
         onClick={(e) => e.stopPropagation()}
@@ -119,7 +119,7 @@ export function DialogHeader({ children, className }: DialogHeaderProps) {
 
 export function DialogTitle({ children, className }: DialogTitleProps) {
   return (
-    <h2 className={cn("text-lg font-semibold leading-none tracking-tight", className)}>
+    <h2 className={cn("text-lg font-semibold leading-none tracking-tight text-gray-900", className)}>
       {children}
     </h2>
   )
@@ -127,7 +127,7 @@ export function DialogTitle({ children, className }: DialogTitleProps) {
 
 export function DialogDescription({ children, className }: DialogDescriptionProps) {
   return (
-    <p className={cn("text-sm text-gray-600 dark:text-gray-400", className)}>
+    <p className={cn("text-sm text-gray-600", className)}>
       {children}
     </p>
   )

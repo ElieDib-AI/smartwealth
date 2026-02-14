@@ -47,13 +47,36 @@ export interface User {
 }
 
 // Account types
-export type AccountType = 'checking' | 'savings' | 'credit' | 'investment' | 'cash'
+export type AccountCategory = 'bank' | 'credit_loans' | 'investments' | 'assets'
+
+export type AccountType = 
+  // Bank Accounts
+  | 'checking' 
+  | 'savings' 
+  | 'cash'
+  // Credit & Loans
+  | 'credit_card'
+  | 'personal_loan'
+  | 'mortgage'
+  | 'car_loan'
+  | 'student_loan'
+  // Investments
+  | 'stocks'
+  | 'retirement'
+  | 'crypto'
+  | 'mutual_funds'
+  // Assets
+  | 'real_estate'
+  | 'vehicle'
+  | 'valuables'
+  | 'other_assets'
 
 export interface Account {
   _id: ObjectId
   userId: ObjectId
   name: string
   type: AccountType
+  category: AccountCategory
   balance: number
   currency: string
   institution?: string

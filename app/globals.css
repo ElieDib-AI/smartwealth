@@ -69,6 +69,48 @@ select:focus {
   @apply outline-none ring-2 ring-primary-600 border-transparent;
 }
 
+/* Select dropdown options - solid white background with shadow */
+select {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  color: #111827 !important;
+}
+
+select option,
+select optgroup {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  color: #111827 !important;
+  opacity: 1 !important;
+  padding: 8px 12px !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+}
+
+select optgroup {
+  font-weight: 600 !important;
+  background: #f9fafb !important;
+  background-color: #f9fafb !important;
+  padding: 8px 12px !important;
+}
+
+select option {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  padding-left: 24px !important;
+}
+
+select option:checked {
+  background: #059669 !important;
+  background-color: #059669 !important;
+  color: #ffffff !important;
+}
+
+/* Force select dropdown to render on top with solid background */
+select:focus {
+  position: relative !important;
+  z-index: 9999 !important;
+}
+
 /* Buttons */
 button {
   @apply transition-colors duration-200;
