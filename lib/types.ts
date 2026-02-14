@@ -87,6 +87,70 @@ export interface Account {
   updatedAt: Date
 }
 
+// Transaction types
+export type TransactionType = 'expense' | 'income' | 'transfer'
+export type TransactionStatus = 'completed' | 'pending' | 'cancelled'
+
+export interface CurrencyConversion {
+  fromCurrency: string
+  toCurrency: string
+  fromAmount: number
+  toAmount: number
+  exchangeRate: number
+  conversionDate: Date
+}
+
+export interface Transaction {
+  _id: ObjectId
+  userId: ObjectId
+  type: TransactionType
+  
+  // Amount & Currency
+  amount: number
+  currency: string
+  
+  // Account References
+  accountId: ObjectId           // Source account for expense/transfer, destination for income
+  toAccountId?: ObjectId        // Only for transfers
+  
+  // Categorization
+  category: string              // Category name (predefined or custom)
+  subcategory?: string          // Optional subcategory
+  
+  // Description & Metadata
+  description: string
+  notes?: string
+  tags?: string[]               // For flexible filtering/grouping
+  
+  // Date & Time
+  date: Date                    // Transaction date (can be backdated)
+  createdAt: Date
+  updatedAt: Date
+  
+  // Status & Tracking
+  status: TransactionStatus
+  
+  // Currency Conversion (for transfers between different currencies)
+  currencyConversion?: CurrencyConversion
+  
+  // Future-proofing
+  isRecurring?: boolean         // For future recurring transactions
+  recurringId?: ObjectId        // Link to recurring template
+  attachments?: string[]        // For future receipt uploads
+  splitTransactionId?: ObjectId // For future split transactions
+}
+
+export interface CustomCategory {
+  _id: ObjectId
+  userId: ObjectId
+  name: string
+  type: 'expense' | 'income'
+  icon?: string                 // Emoji or lucide icon
+  color?: string
+  subcategories?: string[]
+  createdAt: Date
+}
+
 // API Response types
 export interface ApiResponse<T = unknown> {
   success: boolean

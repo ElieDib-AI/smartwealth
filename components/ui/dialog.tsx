@@ -79,17 +79,17 @@ export function DialogContent({ children, className }: DialogContentProps) {
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center">
       {/* Backdrop */}
       <div 
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9998]"
         onClick={() => onOpenChange(false)}
       />
       
       {/* Dialog */}
       <div 
         className={cn(
-          "relative z-50 w-full max-w-lg mx-4 bg-white dark:bg-white rounded-lg shadow-xl border border-gray-200 dark:border-gray-300",
+          "relative z-[9999] w-full max-w-lg mx-4 bg-white dark:bg-white rounded-lg shadow-xl border border-gray-200 dark:border-gray-300",
           className
         )}
         onClick={(e) => e.stopPropagation()}
