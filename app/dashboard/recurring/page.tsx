@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,6 +12,7 @@ import { RecurringListItem } from '@/components/recurring/recurring-list-item'
 import { Plus, Repeat } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { toast } from 'sonner'
+import { generateOccurrences } from '@/lib/utils/recurring'
 
 export default function RecurringTransactionsPage() {
   const router = useRouter()
@@ -157,6 +158,62 @@ export default function RecurringTransactionsPage() {
     }
   }
 
+  // Generate all occurrences for display
+  const allOccurrences = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    const occurrences: Array<{
+      recurringTransaction: RecurringTransaction & { accountName?: string; toAccountName?: string }
+      dueDate: Date
+      showExecute: boolean
+    }> = []
+
+    recurringTransactions.forEach((recurring) => {
+      const dates = generateOccurrences(
+        new Date(recurring.startDate),
+        recurring.frequency,
+        recurring.interval,
+        recurring.intervalUnit,
+        recurring.endDate ? new Date(recurring.endDate) : undefined,
+        recurring.lastExecutedAt ? new Date(recurring.lastExecutedAt) : undefined
+      )
+
+      dates.forEach((date) => {
+        occurrences.push({
+          recurringTransaction: recurring,
+          dueDate: date,
+          showExecute: false // Will be determined below
+        })
+      })
+    })
+
+    // Sort by due date
+    occurrences.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
+
+    // Determine which occurrences should show Execute button
+    // Logic: All overdue + first future occurrence = Execute, rest = Edit only
+    let foundFirstFuture = false
+    occurrences.forEach((occurrence) => {
+      const occurrenceDate = new Date(occurrence.dueDate)
+      occurrenceDate.setHours(0, 0, 0, 0)
+      
+      if (occurrenceDate <= today) {
+        // Overdue or due today - show execute
+        occurrence.showExecute = true
+      } else if (!foundFirstFuture) {
+        // First future occurrence - show execute
+        occurrence.showExecute = true
+        foundFirstFuture = true
+      } else {
+        // All other future occurrences - edit only
+        occurrence.showExecute = false
+      }
+    })
+
+    return occurrences
+  }, [recurringTransactions])
+
   if (loading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
@@ -202,7 +259,7 @@ export default function RecurringTransactionsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {recurringTransactions.length === 0 ? (
+              {allOccurrences.length === 0 ? (
                 <div className="text-center py-12">
                   <Repeat className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <p className="text-gray-600 dark:text-gray-400 mb-4">
@@ -215,13 +272,17 @@ export default function RecurringTransactionsPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {recurringTransactions.map((recurring) => (
+                  {allOccurrences.map((occurrence, index) => (
                     <RecurringListItem
-                      key={recurring._id.toString()}
-                      recurringTransaction={recurring}
+                      key={`${occurrence.recurringTransaction._id.toString()}-${occurrence.dueDate.toISOString()}`}
+                      recurringTransaction={{
+                        ...occurrence.recurringTransaction,
+                        nextDueDate: occurrence.dueDate
+                      }}
                       onExecute={handleExecute}
                       onEdit={handleEditRecurring}
                       onDelete={handleDelete}
+                      showExecute={occurrence.showExecute}
                     />
                   ))}
                 </div>

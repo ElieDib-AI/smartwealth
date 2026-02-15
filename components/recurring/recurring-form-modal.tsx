@@ -14,8 +14,9 @@ import { Label } from '@/components/ui/label'
 import { CustomSelect } from '@/components/ui/custom-select'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Account, RecurringTransaction, RecurringFrequency, RecurringIntervalUnit } from '@/lib/types'
+import { Account, RecurringTransaction, RecurringFrequency, RecurringIntervalUnit, CustomCategory } from '@/lib/types'
 import { getFrequencyLabel } from '@/lib/utils/recurring'
+import { toast } from 'sonner'
 
 interface RecurringFormModalProps {
   open: boolean
@@ -75,12 +76,12 @@ const currencies = [
 const expenseCategories = [
   'Housing', 'Transportation', 'Food & Dining', 'Utilities', 'Healthcare',
   'Entertainment', 'Shopping', 'Personal Care', 'Education', 'Insurance',
-  'Debt Payments', 'Savings & Investments', 'Gifts & Donations', 'Travel', 'Other'
+  'Debt Payments', 'Savings & Investments', 'Gifts & Donations', 'Travel', 'Other', 'Custom'
 ]
 
 const incomeCategories = [
   'Salary', 'Freelance', 'Business Income', 'Investment Income', 'Rental Income',
-  'Interest', 'Dividends', 'Bonus', 'Gift', 'Refund', 'Other'
+  'Interest', 'Dividends', 'Bonus', 'Gift', 'Refund', 'Other', 'Custom'
 ]
 
 export function RecurringFormModal({ 
@@ -101,9 +102,48 @@ export function RecurringFormModal({
     startDate: new Date().toISOString().split('T')[0]
   })
   const [loading, setLoading] = useState(false)
+  const [customCategory, setCustomCategory] = useState('')
+  const [showCustomCategory, setShowCustomCategory] = useState(false)
+  const [customCategories, setCustomCategories] = useState<CustomCategory[]>([])
+  const [loadingCategories, setLoadingCategories] = useState(false)
+
+  // Fetch custom categories
+  useEffect(() => {
+    const fetchCustomCategories = async () => {
+      setLoadingCategories(true)
+      try {
+        const response = await fetch('/api/categories')
+        const data = await response.json()
+        if (data.success) {
+          setCustomCategories(data.data.custom || [])
+        }
+      } catch (error) {
+        console.error('Error fetching custom categories:', error)
+      } finally {
+        setLoadingCategories(false)
+      }
+    }
+
+    if (open) {
+      fetchCustomCategories()
+    }
+  }, [open])
 
   useEffect(() => {
     if (recurringTransaction) {
+      const predefinedCategories = recurringTransaction.type === 'expense' ? expenseCategories : 
+                                    recurringTransaction.type === 'income' ? incomeCategories : 
+                                    ['Transfer']
+      
+      const userCustomCategories = customCategories
+        .filter(c => c.type === (recurringTransaction.type === 'transfer' ? 'expense' : recurringTransaction.type))
+        .map(c => c.name)
+      
+      const allAvailableCategories = [...predefinedCategories.filter(c => c !== 'Custom'), ...userCustomCategories]
+      
+      // Check if category is in the available list (predefined or saved custom)
+      const isSavedCategory = allAvailableCategories.includes(recurringTransaction.category)
+      
       setFormData({
         type: recurringTransaction.type,
         amount: recurringTransaction.amount,
@@ -120,6 +160,15 @@ export function RecurringFormModal({
         startDate: new Date(recurringTransaction.startDate).toISOString().split('T')[0],
         endDate: recurringTransaction.endDate ? new Date(recurringTransaction.endDate).toISOString().split('T')[0] : undefined
       })
+      
+      if (!isSavedCategory) {
+        // It's a new custom category being entered
+        setShowCustomCategory(true)
+        setCustomCategory(recurringTransaction.category)
+      } else {
+        setShowCustomCategory(false)
+        setCustomCategory('')
+      }
     } else {
       setFormData({
         type: 'expense',
@@ -131,13 +180,48 @@ export function RecurringFormModal({
         frequency: 'monthly',
         startDate: new Date().toISOString().split('T')[0]
       })
+      setShowCustomCategory(false)
+      setCustomCategory('')
     }
-  }, [recurringTransaction, accounts, open])
+  }, [recurringTransaction, accounts, open, customCategories])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     try {
+      // If custom category is entered, save it first
+      if (showCustomCategory && customCategory.trim()) {
+        const categoryType = formData.type === 'transfer' ? 'expense' : formData.type
+        
+        // Check if this custom category already exists
+        const existingCustom = customCategories.find(
+          c => c.name.toLowerCase() === customCategory.trim().toLowerCase() && c.type === categoryType
+        )
+        
+        if (!existingCustom) {
+          try {
+            const response = await fetch('/api/categories', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: customCategory.trim(),
+                type: categoryType
+              })
+            })
+            
+            const result = await response.json()
+            if (result.success) {
+              toast.success('Custom category saved')
+              // Add to local state
+              setCustomCategories([...customCategories, result.data])
+            }
+          } catch (error) {
+            console.error('Error saving custom category:', error)
+            // Continue with submission even if category save fails
+          }
+        }
+      }
+      
       await onSubmit(formData)
       onOpenChange(false)
     } catch (error) {
@@ -147,9 +231,16 @@ export function RecurringFormModal({
     }
   }
 
-  const categories = formData.type === 'expense' ? expenseCategories : 
-                     formData.type === 'income' ? incomeCategories : 
-                     ['Transfer']
+  // Build categories list with predefined + custom categories
+  const predefinedCategories = formData.type === 'expense' ? expenseCategories : 
+                                formData.type === 'income' ? incomeCategories : 
+                                ['Transfer']
+  
+  const userCustomCategories = customCategories
+    .filter(c => c.type === (formData.type === 'transfer' ? 'expense' : formData.type))
+    .map(c => c.name)
+  
+  const categories = [...predefinedCategories.filter(c => c !== 'Custom'), ...userCustomCategories, 'Custom']
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -163,9 +254,9 @@ export function RecurringFormModal({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-6 px-6">
           {/* Type */}
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="type">Type</Label>
             <CustomSelect
               value={formData.type}
@@ -177,7 +268,7 @@ export function RecurringFormModal({
 
           {/* Amount & Currency */}
           <div className="grid grid-cols-2 gap-4">
-            <div>
+            <div className="space-y-2">
               <Label htmlFor="amount">Amount</Label>
               <Input
                 id="amount"
@@ -188,7 +279,7 @@ export function RecurringFormModal({
                 required
               />
             </div>
-            <div>
+            <div className="space-y-2">
               <Label htmlFor="currency">Currency</Label>
               <CustomSelect
                 value={formData.currency}
@@ -200,7 +291,7 @@ export function RecurringFormModal({
           </div>
 
           {/* Account */}
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="accountId">
               {formData.type === 'income' ? 'To Account' : 'From Account'}
             </Label>
@@ -214,7 +305,7 @@ export function RecurringFormModal({
 
           {/* To Account (for transfers) */}
           {formData.type === 'transfer' && (
-            <div>
+            <div className="space-y-2">
               <Label htmlFor="toAccountId">To Account</Label>
               <CustomSelect
                 value={formData.toAccountId || ''}
@@ -232,18 +323,43 @@ export function RecurringFormModal({
           )}
 
           {/* Category */}
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="category">Category</Label>
             <CustomSelect
-              value={formData.category}
-              onChange={(value: string) => setFormData({ ...formData, category: value })}
+              value={showCustomCategory ? 'Custom' : formData.category}
+              onChange={(value: string) => {
+                if (value === 'Custom') {
+                  setShowCustomCategory(true)
+                  setFormData({ ...formData, category: customCategory })
+                } else {
+                  setShowCustomCategory(false)
+                  setFormData({ ...formData, category: value })
+                }
+              }}
               groups={[{ label: 'Categories', options: categories.map(c => ({ value: c, label: c })) }]}
               placeholder="Select category"
             />
           </div>
 
+          {/* Custom Category Input */}
+          {showCustomCategory && (
+            <div className="space-y-2">
+              <Label htmlFor="customCategory">Custom Category Name</Label>
+              <Input
+                id="customCategory"
+                value={customCategory}
+                onChange={(e) => {
+                  setCustomCategory(e.target.value)
+                  setFormData({ ...formData, category: e.target.value })
+                }}
+                placeholder="Enter custom category name"
+                required
+              />
+            </div>
+          )}
+
           {/* Description */}
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="description">Description</Label>
             <Input
               id="description"
@@ -255,7 +371,7 @@ export function RecurringFormModal({
           </div>
 
           {/* Notes */}
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="notes">Notes (Optional)</Label>
             <Textarea
               id="notes"
@@ -267,7 +383,7 @@ export function RecurringFormModal({
           </div>
 
           {/* Frequency */}
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="frequency">Frequency</Label>
             <CustomSelect
               value={formData.frequency}
@@ -280,7 +396,7 @@ export function RecurringFormModal({
           {/* Custom Frequency Options */}
           {formData.frequency === 'custom' && (
             <div className="grid grid-cols-2 gap-4">
-              <div>
+              <div className="space-y-2">
                 <Label htmlFor="interval">Every</Label>
                 <Input
                   id="interval"
@@ -291,7 +407,7 @@ export function RecurringFormModal({
                   required
                 />
               </div>
-              <div>
+              <div className="space-y-2">
                 <Label htmlFor="intervalUnit">Unit</Label>
                 <CustomSelect
                   value={formData.intervalUnit || 'days'}
@@ -304,7 +420,7 @@ export function RecurringFormModal({
           )}
 
           {/* Start Date */}
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="startDate">Start Date</Label>
             <Input
               id="startDate"
@@ -316,7 +432,7 @@ export function RecurringFormModal({
           </div>
 
           {/* End Date (Optional) */}
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="endDate">End Date (Optional)</Label>
             <Input
               id="endDate"

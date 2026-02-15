@@ -63,6 +63,22 @@ export function calculateNextDueDate(
 }
 
 /**
+ * Calculate the initial next due date for a new recurring transaction
+ * If start date is in the past, this will be the start date itself (to show as overdue)
+ * If start date is in the future, this will be the start date
+ */
+export function calculateInitialNextDueDate(
+  startDate: Date,
+  frequency: RecurringFrequency,
+  interval?: number,
+  intervalUnit?: RecurringIntervalUnit
+): Date {
+  // Always return the start date as the first due date
+  // This allows past dates to show as overdue
+  return new Date(startDate)
+}
+
+/**
  * Get human-readable frequency label
  */
 export function getFrequencyLabel(
@@ -136,4 +152,50 @@ export function formatDueDate(nextDueDate: Date): string {
       year: 'numeric'
     })
   }
+}
+
+/**
+ * Generate all occurrences of a recurring transaction
+ * from the past (if not executed) up to 1 year from today
+ */
+export function generateOccurrences(
+  startDate: Date,
+  frequency: RecurringFrequency,
+  interval?: number,
+  intervalUnit?: RecurringIntervalUnit,
+  endDate?: Date,
+  lastExecutedAt?: Date
+): Date[] {
+  const occurrences: Date[] = []
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  
+  const oneYearFromNow = new Date(today)
+  oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1)
+  
+  // Start from the start date
+  let currentDate = new Date(startDate)
+  currentDate.setHours(0, 0, 0, 0)
+  
+  // If there's a lastExecutedAt, start from the next occurrence after that
+  if (lastExecutedAt) {
+    const lastExecuted = new Date(lastExecutedAt)
+    lastExecuted.setHours(0, 0, 0, 0)
+    currentDate = calculateNextDueDate(lastExecuted, frequency, interval, intervalUnit)
+  }
+  
+  // Generate occurrences up to 1 year from now or end date (whichever is earlier)
+  const maxDate = endDate && new Date(endDate) < oneYearFromNow ? new Date(endDate) : oneYearFromNow
+  
+  // Limit to 100 occurrences to prevent infinite loops
+  let count = 0
+  const maxOccurrences = 100
+  
+  while (currentDate <= maxDate && count < maxOccurrences) {
+    occurrences.push(new Date(currentDate))
+    currentDate = calculateNextDueDate(currentDate, frequency, interval, intervalUnit)
+    count++
+  }
+  
+  return occurrences
 }

@@ -3,7 +3,7 @@ import { ObjectId } from 'mongodb'
 import { getAuthUser } from '@/lib/auth'
 import { getCollection } from '@/lib/database'
 import { RecurringTransaction, Account } from '@/lib/types'
-import { calculateNextDueDate } from '@/lib/utils/recurring'
+import { calculateInitialNextDueDate } from '@/lib/utils/recurring'
 
 // GET /api/recurring-transactions - List all active recurring transactions
 export async function GET(request: NextRequest) {
@@ -19,13 +19,12 @@ export async function GET(request: NextRequest) {
     const recurringCollection = await getCollection<RecurringTransaction>('recurring_transactions')
     const accountsCollection = await getCollection<Account>('accounts')
 
-    // Get all active recurring transactions, sorted by next due date
+    // Get all active recurring transactions
     const recurringTransactions = await recurringCollection
       .find({ 
         userId: user._id,
         isActive: true 
       })
-      .sort({ nextDueDate: 1 })
       .toArray()
 
     // Enrich with account names
@@ -45,6 +44,11 @@ export async function GET(request: NextRequest) {
       accountName: accountMap.get(rt.accountId.toString()) || 'Unknown Account',
       toAccountName: rt.toAccountId ? accountMap.get(rt.toAccountId.toString()) : undefined
     }))
+
+    // Sort by next due date
+    enrichedTransactions.sort((a, b) => 
+      new Date(a.nextDueDate).getTime() - new Date(b.nextDueDate).getTime()
+    )
 
     return NextResponse.json({
       success: true,
@@ -113,7 +117,7 @@ export async function POST(request: NextRequest) {
     const recurringCollection = await getCollection<RecurringTransaction>('recurring_transactions')
 
     const startDate = new Date(body.startDate)
-    const nextDueDate = calculateNextDueDate(
+    const nextDueDate = calculateInitialNextDueDate(
       startDate,
       body.frequency,
       body.interval,

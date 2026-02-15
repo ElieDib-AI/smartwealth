@@ -21,13 +21,15 @@ interface RecurringListItemProps {
   onExecute: (id: string) => void
   onEdit: (recurringTransaction: RecurringTransaction) => void
   onDelete: (id: string) => void
+  showExecute?: boolean // Whether to show execute button (vs edit only)
 }
 
 export function RecurringListItem({ 
   recurringTransaction, 
   onExecute, 
   onEdit, 
-  onDelete 
+  onDelete,
+  showExecute = true
 }: RecurringListItemProps) {
   const [showActions, setShowActions] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -67,6 +69,7 @@ export function RecurringListItem({
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
     >
+      {/* Icon and Details */}
       <div className="flex items-center gap-4 flex-1">
         {/* Icon */}
         <div className={cn(
@@ -111,7 +114,34 @@ export function RecurringListItem({
             </span>
           </div>
         </div>
+      </div>
 
+      {/* Due Date Badge - 20% */}
+      <div className="flex items-center justify-center w-1/5 px-2">
+        <div className={cn(
+          "px-3 py-2 rounded-lg border-2 text-center",
+          overdue 
+            ? "border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20" 
+            : "border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20"
+        )}>
+          <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-0.5 whitespace-nowrap">
+            Due Date
+          </div>
+          <div className={cn(
+            "text-sm font-bold whitespace-nowrap",
+            overdue ? "text-red-700 dark:text-red-400" : "text-blue-700 dark:text-blue-400"
+          )}>
+            {new Date(recurringTransaction.nextDueDate).toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric'
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Amount and Actions - 30% */}
+      <div className="flex items-center justify-end gap-4 w-[30%]">
         {/* Amount */}
         <div className="text-right">
           <p className={cn(
@@ -127,42 +157,76 @@ export function RecurringListItem({
 
         {/* Actions */}
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            onClick={handleExecute}
-            disabled={loading}
-            className="gap-2"
-          >
-            <Play className="h-4 w-4" />
-            {loading ? 'Executing...' : 'Execute'}
-          </Button>
-
-          <AnimatePresence>
-            {showActions && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                className="flex items-center gap-1"
+          {showExecute ? (
+            <>
+              <Button
+                size="sm"
+                onClick={handleExecute}
+                disabled={loading}
+                className="gap-2"
               >
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onEdit(recurringTransaction)}
-                >
-                  <Edit2 className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onDelete(recurringTransaction._id.toString())}
-                  className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                <Play className="h-4 w-4" />
+                {loading ? 'Executing...' : 'Execute'}
+              </Button>
+
+              <AnimatePresence>
+                {showActions && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    className="flex items-center gap-1"
+                  >
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onEdit(recurringTransaction)}
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onDelete(recurringTransaction._id.toString())}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </>
+          ) : (
+            <div className="flex items-center gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onEdit(recurringTransaction)}
+                className="gap-2"
+              >
+                <Edit2 className="h-4 w-4" />
+                Edit
+              </Button>
+              <AnimatePresence>
+                {showActions && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                  >
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onDelete(recurringTransaction._id.toString())}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
         </div>
       </div>
     </motion.div>
