@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth'
 import { getCollection } from '@/lib/database'
-import { Account } from '@/lib/types'
+import { Account, Transaction } from '@/lib/types'
 import { ObjectId } from 'mongodb'
 
 // GET /api/accounts/[id] - Get single account
@@ -43,9 +43,23 @@ export async function GET(
       )
     }
 
+    // Get balance from latest transaction's running balance
+    const transactionsCollection = await getCollection<Transaction>('transactions')
+    const latestTransaction = await transactionsCollection
+      .findOne(
+        { userId: user._id, accountId: account._id },
+        { sort: { date: -1, createdAt: -1 } }
+      )
+    
+    // Use running balance from latest transaction, or 0 if no transactions
+    const calculatedBalance = latestTransaction?.runningBalance ?? 0
+
     return NextResponse.json({
       success: true,
-      data: account
+      data: {
+        ...account,
+        balance: calculatedBalance
+      }
     })
   } catch (error) {
     console.error('Error fetching account:', error)

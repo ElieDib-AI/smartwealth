@@ -118,6 +118,8 @@ export interface Transaction {
   // Account References
   accountId: ObjectId           // Source account for expense/transfer, destination for income
   toAccountId?: ObjectId        // Only for transfers
+  toAccountName?: string        // Enriched field: name of the transfer destination account
+  transferDirection?: 'in' | 'out' // For transfers: 'out' = money leaving accountId, 'in' = money entering accountId
   
   // Categorization
   category: string              // Category name (predefined or custom)
@@ -135,6 +137,9 @@ export interface Transaction {
   
   // Status & Tracking
   status: TransactionStatus
+  
+  // Running Balance
+  runningBalance?: number       // Account balance AFTER this transaction
   
   // Currency Conversion (for transfers between different currencies)
   currencyConversion?: CurrencyConversion
@@ -155,6 +160,50 @@ export interface CustomCategory {
   color?: string
   subcategories?: string[]
   createdAt: Date
+}
+
+// Recurring Transaction types
+export type RecurringFrequency = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'semiannually' | 'yearly' | 'custom'
+export type RecurringIntervalUnit = 'days' | 'weeks' | 'months'
+
+export interface RecurringTransaction {
+  _id: ObjectId
+  userId: ObjectId
+  type: TransactionType
+  
+  // Amount & Currency
+  amount: number
+  currency: string
+  
+  // Account References
+  accountId: ObjectId           // Source account for expense/transfer, destination for income
+  toAccountId?: ObjectId        // Only for transfers
+  
+  // Categorization
+  category: string
+  subcategory?: string
+  
+  // Description
+  description: string
+  notes?: string
+  
+  // Frequency Configuration
+  frequency: RecurringFrequency
+  interval?: number             // For custom: every X days/weeks/months
+  intervalUnit?: RecurringIntervalUnit  // For custom frequency
+  
+  // Scheduling
+  startDate: Date
+  nextDueDate: Date
+  endDate?: Date                // Optional end date
+  
+  // Status
+  isActive: boolean
+  
+  // Metadata
+  createdAt: Date
+  updatedAt: Date
+  lastExecutedAt?: Date
 }
 
 // API Response types

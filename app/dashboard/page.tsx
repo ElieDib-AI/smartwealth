@@ -20,6 +20,7 @@ export default function DashboardPage() {
   const [accountTransactions, setAccountTransactions] = useState<Transaction[]>([])
   const [loadingTransactions, setLoadingTransactions] = useState(false)
   const [accounts, setAccounts] = useState<Account[]>([])
+  const [calculatedBalance, setCalculatedBalance] = useState(0)
 
   // Check authentication
   useEffect(() => {
@@ -79,7 +80,40 @@ export default function DashboardPage() {
       const data = await response.json()
       
       if (data.success) {
-        setAccountTransactions(data.data.transactions || [])
+        const txs = data.data.transactions || []
+        
+        // Fetch all accounts (including inactive) for proper transfer names
+        const accountsResponse = await fetch('/api/accounts?includeInactive=true')
+        const accountsData = await accountsResponse.json()
+        const allAccounts = accountsData.success ? accountsData.data.accounts : []
+        
+        // Enrich transactions with toAccount name for transfers
+        const enrichedTxs = txs.map((t: Transaction) => {
+          if (t.toAccountId) {
+            const toAccount = allAccounts.find((a: Account) => a._id.toString() === t.toAccountId?.toString())
+            return { ...t, toAccountName: toAccount?.name }
+          }
+          return t
+        })
+        
+        // Calculate balance from transactions
+        let balance = 0
+        for (const t of txs) {
+          if (t.type === 'income') {
+            balance += t.amount
+          } else if (t.type === 'expense') {
+            balance -= t.amount
+          } else if (t.type === 'transfer') {
+            if (t.transferDirection === 'in') {
+              balance += t.amount
+            } else if (t.transferDirection === 'out') {
+              balance -= t.amount
+            }
+          }
+        }
+        
+        setAccountTransactions(enrichedTxs)
+        setCalculatedBalance(balance)
       }
     } catch (error) {
       console.error('Error fetching transactions:', error)
@@ -206,7 +240,7 @@ export default function DashboardPage() {
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-600">Balance:</span>
                 <span className="text-2xl font-bold text-gray-900">
-                  {formatCurrency(selectedAccount.balance, selectedAccount.currency)}
+                  {formatCurrency(calculatedBalance, selectedAccount.currency)}
                 </span>
               </div>
               <div className="mt-2 text-sm text-gray-500">
@@ -225,51 +259,71 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {accountTransactions.map((transaction) => (
-                    <div
-                      key={transaction._id.toString()}
-                      className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            {transaction.type === 'income' && (
-                              <ArrowDownRight className="w-4 h-4 text-green-600" />
-                            )}
-                            {transaction.type === 'expense' && (
-                              <ArrowUpRight className="w-4 h-4 text-red-600" />
-                            )}
-                            {transaction.type === 'transfer' && (
-                              <ArrowLeftRight className="w-4 h-4 text-blue-600" />
-                            )}
-                            <span className="font-medium text-gray-900">
-                              {transaction.description}
-                            </span>
-                          </div>
+                  {accountTransactions.map((transaction) => {
+                    const isTransfer = transaction.type === 'transfer'
+                    
+                    // For transfers: use the transferDirection field
+                    const isTransferOut = isTransfer && transaction.transferDirection === 'out'
+                    const isTransferIn = isTransfer && transaction.transferDirection === 'in'
+                    
+                    return (
+                      <div
+                        key={transaction._id.toString()}
+                        className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              {transaction.type === 'income' && (
+                                <ArrowDownRight className="w-4 h-4 text-green-600" />
+                              )}
+                              {transaction.type === 'expense' && (
+                                <ArrowUpRight className="w-4 h-4 text-red-600" />
+                              )}
+                              {transaction.type === 'transfer' && (
+                                <ArrowLeftRight className="w-4 h-4 text-blue-600" />
+                              )}
+                              <span className="font-medium text-gray-900">
+                                {transaction.description}
+                              </span>
+                            </div>
                           <div className="text-sm text-gray-500">
                             {transaction.category}
+                            {isTransferOut && transaction.toAccountName && (
+                              <span className="text-blue-600"> • To {transaction.toAccountName}</span>
+                            )}
+                            {isTransferIn && transaction.toAccountName && (
+                              <span className="text-blue-600"> • From {transaction.toAccountName}</span>
+                            )}
                           </div>
-                          <div className="text-xs text-gray-400 mt-1">
-                            {new Date(transaction.date).toLocaleDateString('en-US', {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric'
-                            })}
+                            <div className="text-xs text-gray-400 mt-1">
+                              {new Date(transaction.date).toLocaleDateString('en-US', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric'
+                              })}
+                            </div>
                           </div>
-                        </div>
                         <div className="text-right">
                           <div className={`font-semibold ${
-                            transaction.type === 'income' ? 'text-green-600' : 
-                            transaction.type === 'expense' ? 'text-red-600' : 
+                            transaction.amount === 0 ? 'text-blue-600' :
+                            transaction.type === 'income' || isTransferIn ? 'text-green-600' : 
+                            transaction.type === 'expense' || isTransferOut ? 'text-red-600' : 
                             'text-blue-600'
                           }`}>
-                            {transaction.type === 'expense' ? '-' : '+'}
+                            {transaction.amount === 0 ? '' : (transaction.type === 'income' || isTransferIn) ? '+' : '-'}
                             {formatCurrency(transaction.amount, transaction.currency)}
                           </div>
+                          {transaction.runningBalance !== undefined && (
+                            <div className="text-xs text-gray-400 mt-1">
+                              Balance: {formatCurrency(transaction.runningBalance, transaction.currency)}
+                            </div>
+                          )}
+                        </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>

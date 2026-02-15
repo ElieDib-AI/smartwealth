@@ -31,17 +31,13 @@ export async function connectToDatabase() {
       ])
       return { client: cachedClient, db: cachedDb }
     } catch (error) {
-      // Connection is stale, close it properly and clear cache
-      console.log('MongoDB connection stale, closing and reconnecting...')
-      try {
-        await cachedClient?.close()
-      } catch (closeError) {
-        console.log('Error closing stale connection:', closeError)
-      }
+      // Connection is stale, clear cache without trying to close (it's already dead)
+      console.log('MongoDB connection stale, clearing cache and reconnecting...')
       cachedClient = null
       cachedDb = null
       global._mongoClient = undefined
       global._mongoDb = undefined
+      // Don't try to close the stale connection, just let it be garbage collected
     }
   }
 

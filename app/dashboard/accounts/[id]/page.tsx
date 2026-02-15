@@ -61,11 +61,13 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
   const router = useRouter()
   const [user, setUser] = useState<AuthUser | null>(null)
   const [account, setAccount] = useState<Account | null>(null)
+  const [accounts, setAccounts] = useState<Account[]>([])
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingTransactions, setLoadingTransactions] = useState(true)
   const [totalIncome, setTotalIncome] = useState(0)
   const [totalExpenses, setTotalExpenses] = useState(0)
+  const [calculatedBalance, setCalculatedBalance] = useState(0)
   const hasCheckedRef = useRef(false)
 
   useEffect(() => {
@@ -115,7 +117,25 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
       
       if (data.success) {
         const txs = data.data.transactions || []
-        setTransactions(txs)
+        
+        // Fetch account details for transfers (including inactive accounts for proper names)
+        const accountsResponse = await fetch('/api/accounts?includeInactive=true')
+        const accountsData = await accountsResponse.json()
+        const allAccounts = accountsData.success ? accountsData.data.accounts : []
+        
+        // Store accounts for later use
+        setAccounts(allAccounts)
+        
+        // Enrich transactions with toAccount name
+        const enrichedTxs = txs.map((t: Transaction) => {
+          if (t.toAccountId) {
+            const toAccount = allAccounts.find((a: Account) => a._id.toString() === t.toAccountId?.toString())
+            return { ...t, toAccountName: toAccount?.name }
+          }
+          return t
+        })
+        
+        setTransactions(enrichedTxs)
         
         // Calculate totals
         const income = txs
@@ -125,8 +145,25 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
           .filter((t: Transaction) => t.type === 'expense')
           .reduce((sum: number, t: Transaction) => sum + t.amount, 0)
         
+        // Calculate balance from transactions
+        let balance = 0
+        for (const t of txs) {
+          if (t.type === 'income') {
+            balance += t.amount
+          } else if (t.type === 'expense') {
+            balance -= t.amount
+          } else if (t.type === 'transfer') {
+            if (t.transferDirection === 'in') {
+              balance += t.amount
+            } else if (t.transferDirection === 'out') {
+              balance -= t.amount
+            }
+          }
+        }
+        
         setTotalIncome(income)
         setTotalExpenses(expenses)
+        setCalculatedBalance(balance)
       }
     } catch (error) {
       console.error('Error fetching transactions:', error)
@@ -205,7 +242,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
                 <div>
                   <p className="text-sm opacity-90 mb-2">Current Balance</p>
                   <h2 className="text-4xl font-bold mb-4">
-                    {formatCurrency(account.balance, account.currency)}
+                    {formatCurrency(calculatedBalance, account.currency)}
                   </h2>
                   <div className="flex items-center gap-4 text-sm opacity-90">
                     {account.institution && (
@@ -334,6 +371,10 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
                     const isExpense = transaction.type === 'expense'
                     const isTransfer = transaction.type === 'transfer'
                     
+                    // For transfers: use the transferDirection field
+                    const isTransferOut = isTransfer && transaction.transferDirection === 'out'
+                    const isTransferIn = isTransfer && transaction.transferDirection === 'in'
+                    
                     return (
                       <div
                         key={transaction._id.toString()}
@@ -355,18 +396,36 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
                               <span>{transaction.category || 'Uncategorized'}</span>
                               <span>•</span>
                               <span>{formatDate(transaction.date)}</span>
+                              {isTransferOut && transaction.toAccountName && (
+                                <>
+                                  <span>•</span>
+                                  <span>To {transaction.toAccountName}</span>
+                                </>
+                              )}
+                              {isTransferIn && transaction.toAccountName && (
+                                <>
+                                  <span>•</span>
+                                  <span>From {transaction.toAccountName}</span>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>
                         <div className="text-right">
                           <p className={`font-semibold ${
-                            isIncome ? 'text-green-600' :
-                            isExpense ? 'text-red-600' :
+                            transaction.amount === 0 ? 'text-blue-600' :
+                            isIncome || isTransferIn ? 'text-green-600' :
+                            isExpense || isTransferOut ? 'text-red-600' :
                             'text-blue-600'
                           }`}>
-                            {isIncome ? '+' : isExpense ? '-' : ''}
+                            {transaction.amount === 0 ? '' : (isIncome || isTransferIn) ? '+' : (isExpense || isTransferOut) ? '-' : ''}
                             {formatCurrency(transaction.amount, transaction.currency)}
                           </p>
+                          {transaction.runningBalance !== undefined && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                              Balance: {formatCurrency(transaction.runningBalance, transaction.currency)}
+                            </p>
+                          )}
                         </div>
                       </div>
                     )

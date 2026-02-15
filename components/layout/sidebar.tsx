@@ -12,7 +12,8 @@ import {
   TrendingUp,
   Target,
   Receipt,
-  PieChart
+  PieChart,
+  Repeat
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Account } from '@/lib/types'
@@ -35,6 +36,7 @@ const navigationItems = [
   { icon: Home, label: 'Dashboard', href: '/dashboard' },
   { icon: Wallet, label: 'Accounts', href: '/dashboard/accounts' },
   { icon: Receipt, label: 'Transactions', href: '/dashboard/transactions' },
+  { icon: Repeat, label: 'Recurring', href: '/dashboard/recurring' },
   { icon: PieChart, label: 'Budgets', href: '/dashboard/budgets' },
   { icon: Target, label: 'Goals', href: '/dashboard/goals' },
   { icon: TrendingUp, label: 'Reports', href: '/dashboard/reports' },

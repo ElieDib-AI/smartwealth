@@ -377,10 +377,9 @@ export class TransactionService {
     const query: Record<string, unknown> = { userId }
 
     if (filters.accountId) {
-      query.$or = [
-        { accountId: filters.accountId },
-        { toAccountId: filters.accountId }
-      ]
+      // Only show transactions where this account is the primary account
+      // QIF already records both sides of transfers, so we don't need $or
+      query.accountId = filters.accountId
     }
     if (filters.type) {
       query.type = filters.type
