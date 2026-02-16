@@ -16,6 +16,7 @@ import { CustomSelect } from '@/components/ui/custom-select'
 import { Button } from '@/components/ui/button'
 import { Transaction, TransactionType, Account } from '@/lib/types'
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '@/lib/constants/categories'
+import { toast } from 'sonner'
 
 interface TransactionFormModalProps {
   open: boolean
@@ -23,6 +24,7 @@ interface TransactionFormModalProps {
   transaction?: Transaction | null
   accounts: Account[]
   onSubmit: (data: TransactionFormData) => Promise<void>
+  defaultAccountId?: string
 }
 
 export interface TransactionFormData {
@@ -45,22 +47,31 @@ export function TransactionFormModal({
   onOpenChange,
   transaction,
   accounts,
-  onSubmit
+  onSubmit,
+  defaultAccountId
 }: TransactionFormModalProps) {
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState<TransactionFormData>({
     type: 'expense',
     amount: 0,
     currency: 'USD',
-    accountId: '',
+    accountId: defaultAccountId || '',
     category: '',
     description: '',
     date: new Date().toISOString().split('T')[0],
     status: 'completed'
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [customCategories, setCustomCategories] = useState<string[]>([])
+  const [isCustomCategory, setIsCustomCategory] = useState(false)
+  const [customCategoryInput, setCustomCategoryInput] = useState('')
 
   useEffect(() => {
+    if (open) {
+      // Fetch custom categories when modal opens
+      fetchCustomCategories()
+    }
+
     if (transaction) {
       setFormData({
         type: transaction.type,
@@ -77,12 +88,16 @@ export function TransactionFormModal({
         status: transaction.status
       })
     } else {
-      // Reset form for new transaction
+      // Reset form for new transaction with default account if provided
+      const defaultAccount = defaultAccountId 
+        ? accounts.find(a => a._id.toString() === defaultAccountId)
+        : accounts[0]
+      
       setFormData({
         type: 'expense',
         amount: 0,
-        currency: accounts[0]?.currency || 'USD',
-        accountId: accounts[0]?._id.toString() || '',
+        currency: defaultAccount?.currency || 'USD',
+        accountId: defaultAccountId || accounts[0]?._id.toString() || '',
         category: '',
         description: '',
         date: new Date().toISOString().split('T')[0],
@@ -90,7 +105,21 @@ export function TransactionFormModal({
       })
     }
     setErrors({})
-  }, [transaction, accounts, open])
+    setIsCustomCategory(false)
+    setCustomCategoryInput('')
+  }, [transaction, accounts, open, defaultAccountId])
+
+  const fetchCustomCategories = async () => {
+    try {
+      const response = await fetch('/api/categories')
+      const data = await response.json()
+      if (data.success && data.data.custom) {
+        setCustomCategories(data.data.custom.map((c: { name: string }) => c.name))
+      }
+    } catch (error) {
+      console.error('Error fetching custom categories:', error)
+    }
+  }
 
   const handleTypeChange = (type: TransactionType) => {
     setFormData(prev => ({
@@ -110,18 +139,30 @@ export function TransactionFormModal({
     }))
   }
 
-  const getCategoryOptions = () => {
+  const getCategoryOptions = (): Array<{ label: string; value: string; icon?: string }> => {
     if (formData.type === 'transfer') {
       return []
     }
     
     const categories = formData.type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES
-    
-    return categories.map(cat => ({
+    const standardOptions = categories.map(cat => ({
       label: cat.name,
       value: cat.name,
       icon: cat.icon
     }))
+
+    // Add custom categories
+    const customOptions = customCategories.map(name => ({
+      label: name,
+      value: name
+    }))
+
+    // Add "Custom" option at the end
+    return [
+      ...standardOptions,
+      ...customOptions,
+      { label: '+ Custom', value: 'custom' }
+    ]
   }
 
   const getSubcategoryOptions = () => {
@@ -153,8 +194,12 @@ export function TransactionFormModal({
     if (formData.type === 'transfer' && formData.accountId === formData.toAccountId) {
       newErrors.toAccountId = 'Source and destination accounts must be different'
     }
-    if (formData.type !== 'transfer' && !formData.category) {
-      newErrors.category = 'Category is required'
+    if (formData.type !== 'transfer') {
+      if (isCustomCategory && !customCategoryInput.trim()) {
+        newErrors.category = 'Custom category name is required'
+      } else if (!isCustomCategory && !formData.category) {
+        newErrors.category = 'Category is required'
+      }
     }
     if (!formData.date) {
       newErrors.date = 'Date is required'
@@ -167,13 +212,39 @@ export function TransactionFormModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
+    // If custom category is being entered, use that value
+    let finalFormData = { ...formData }
+    if (isCustomCategory && customCategoryInput.trim()) {
+      finalFormData.category = customCategoryInput.trim()
+      
+      // Create the custom category if it doesn't exist
+      if (!customCategories.includes(customCategoryInput.trim())) {
+        try {
+          const response = await fetch('/api/categories', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              name: customCategoryInput.trim(),
+              type: finalFormData.type // 'expense' or 'income'
+            })
+          })
+          
+          if (response.ok) {
+            await fetchCustomCategories()
+          }
+        } catch (error) {
+          console.error('Error creating custom category:', error)
+        }
+      }
+    }
+    
     if (!validateForm()) {
       return
     }
 
     setLoading(true)
     try {
-      await onSubmit(formData)
+      await onSubmit(finalFormData)
       onOpenChange(false)
     } catch (error) {
       console.error('Error submitting transaction:', error)
@@ -322,40 +393,66 @@ export function TransactionFormModal({
 
           {/* Category (not for transfers) */}
           {formData.type !== 'transfer' && (
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="category">Category *</Label>
-                <Select
-                  id="category"
-                  value={formData.category}
-                  onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value, subcategory: undefined }))}
-                  className={errors.category ? 'border-red-500' : ''}
-                >
-                  <option value="">Select category</option>
-                  {getCategoryOptions().map((cat) => (
-                    <option key={cat.value} value={cat.value}>
-                      {cat.icon} {cat.label}
-                    </option>
-                  ))}
-                </Select>
-                {errors.category && <p className="text-xs text-red-500 mt-1">{errors.category}</p>}
-              </div>
-
-              {getSubcategoryOptions().length > 0 && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="subcategory">Subcategory</Label>
+                  <Label htmlFor="category">Category *</Label>
                   <Select
-                    id="subcategory"
-                    value={formData.subcategory || ''}
-                    onChange={(e) => setFormData(prev => ({ ...prev, subcategory: e.target.value }))}
+                    id="category"
+                    value={isCustomCategory ? 'custom' : formData.category}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      if (value === 'custom') {
+                        setIsCustomCategory(true)
+                        setFormData(prev => ({ ...prev, category: '', subcategory: undefined }))
+                      } else {
+                        setIsCustomCategory(false)
+                        setCustomCategoryInput('')
+                        setFormData(prev => ({ ...prev, category: value, subcategory: undefined }))
+                      }
+                    }}
+                    className={errors.category ? 'border-red-500' : ''}
                   >
-                    <option value="">None</option>
-                    {getSubcategoryOptions().map((sub) => (
-                      <option key={sub} value={sub}>
-                        {sub}
+                    <option value="">Select category</option>
+                    {getCategoryOptions().map((cat) => (
+                      <option key={cat.value} value={cat.value}>
+                        {cat.icon ? `${cat.icon} ` : ''}{cat.label}
                       </option>
                     ))}
                   </Select>
+                  {errors.category && <p className="text-xs text-red-500 mt-1">{errors.category}</p>}
+                </div>
+
+                {!isCustomCategory && getSubcategoryOptions().length > 0 && (
+                  <div>
+                    <Label htmlFor="subcategory">Subcategory</Label>
+                    <Select
+                      id="subcategory"
+                      value={formData.subcategory || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, subcategory: e.target.value }))}
+                    >
+                      <option value="">None</option>
+                      {getSubcategoryOptions().map((sub) => (
+                        <option key={sub} value={sub}>
+                          {sub}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                )}
+              </div>
+
+              {isCustomCategory && (
+                <div>
+                  <Label htmlFor="customCategory">Custom Category Name *</Label>
+                  <Input
+                    id="customCategory"
+                    type="text"
+                    value={customCategoryInput}
+                    onChange={(e) => setCustomCategoryInput(e.target.value)}
+                    placeholder="Enter custom category name"
+                    className={errors.category ? 'border-red-500' : ''}
+                  />
                 </div>
               )}
             </div>

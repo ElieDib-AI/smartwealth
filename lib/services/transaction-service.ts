@@ -52,9 +52,10 @@ export class TransactionService {
       const accountsCollection = db.collection('accounts')
 
       // Validate accounts exist and belong to user
+      const sessionOptions = session ? { session } : {}
       const account = await accountsCollection.findOne(
         { _id: input.accountId, userId: input.userId },
-        { session }
+        sessionOptions
       )
       if (!account) {
         throw new Error('Source account not found or unauthorized')
@@ -70,7 +71,7 @@ export class TransactionService {
           const customCategoriesCollection = db.collection('custom_categories')
           const customCategory = await customCategoriesCollection.findOne(
             { userId: input.userId, name: input.category, type: categoryType },
-            { session }
+            sessionOptions
           )
           if (!customCategory) {
             throw new Error(`Invalid category: ${input.category}`)
@@ -88,7 +89,7 @@ export class TransactionService {
         }
         const toAccount = await accountsCollection.findOne(
           { _id: input.toAccountId, userId: input.userId },
-          { session }
+          sessionOptions
         )
         if (!toAccount) {
           throw new Error('Destination account not found or unauthorized')
@@ -119,8 +120,41 @@ export class TransactionService {
         updatedAt: new Date()
       }
 
+      // Calculate running balance before inserting
+      let runningBalance: number | undefined
+      if (transaction.status === 'completed') {
+        // Get current account balance
+        const currentAccount = await accountsCollection.findOne(
+          { _id: input.accountId },
+          sessionOptions
+        )
+        
+        if (currentAccount) {
+          const currentBalance = currentAccount.balance as number
+          
+          // Calculate what the new balance will be after this transaction
+          switch (transaction.type) {
+            case 'expense':
+              runningBalance = currentBalance - transaction.amount
+              break
+            case 'income':
+              runningBalance = currentBalance + transaction.amount
+              break
+            case 'transfer':
+              runningBalance = currentBalance - transaction.amount
+              break
+          }
+        }
+      }
+
+      // Add running balance to transaction
+      const transactionWithBalance = {
+        ...transaction,
+        runningBalance
+      }
+
       // Insert transaction
-      const result = await transactionsCollection.insertOne(transaction, { session })
+      const result = await transactionsCollection.insertOne(transactionWithBalance, sessionOptions)
 
       // Update balances based on transaction type
       if (transaction.status === 'completed') {
@@ -128,7 +162,7 @@ export class TransactionService {
       }
 
       return {
-        ...transaction,
+        ...transactionWithBalance,
         _id: result.insertedId
       } as Transaction
     })
@@ -139,7 +173,7 @@ export class TransactionService {
    */
   private static async applyBalanceChanges(
     transaction: Omit<Transaction, '_id'>,
-    session: ClientSession
+    session: ClientSession | null
   ): Promise<void> {
     switch (transaction.type) {
       case 'expense':
@@ -190,7 +224,7 @@ export class TransactionService {
    */
   private static async revertBalanceChanges(
     transaction: Transaction,
-    session: ClientSession
+    session: ClientSession | null
   ): Promise<void> {
     switch (transaction.type) {
       case 'expense':
@@ -237,6 +271,63 @@ export class TransactionService {
   }
 
   /**
+   * Recalculate running balances for all transactions in an account
+   */
+  private static async recalculateRunningBalances(
+    accountId: ObjectId,
+    session: ClientSession | null
+  ): Promise<void> {
+    const { db } = await connectToDatabase()
+    const transactionsCollection = db.collection('transactions')
+    const accountsCollection = db.collection('accounts')
+    const sessionOptions = session ? { session } : {}
+
+    // Get all completed transactions for this account, sorted by date (oldest first)
+    const transactions = await transactionsCollection
+      .find({ accountId, status: 'completed' }, sessionOptions)
+      .sort({ date: 1, createdAt: 1, _id: 1 })
+      .toArray() as Transaction[]
+
+    if (transactions.length === 0) return
+
+    // Start with 0 and calculate running balance for each transaction
+    let runningBalance = 0
+
+    for (const tx of transactions) {
+      // Calculate the balance after this transaction
+      switch (tx.type) {
+        case 'income':
+          runningBalance += tx.amount
+          break
+        case 'expense':
+          runningBalance -= tx.amount
+          break
+        case 'transfer':
+          if (tx.transferDirection === 'out') {
+            runningBalance -= tx.amount
+          } else if (tx.transferDirection === 'in') {
+            runningBalance += tx.amount
+          }
+          break
+      }
+
+      // Update the transaction with the new running balance
+      await transactionsCollection.updateOne(
+        { _id: tx._id },
+        { $set: { runningBalance, updatedAt: new Date() } },
+        sessionOptions
+      )
+    }
+
+    // Update the account balance to match the final running balance
+    await accountsCollection.updateOne(
+      { _id: accountId },
+      { $set: { balance: runningBalance, updatedAt: new Date() } },
+      sessionOptions
+    )
+  }
+
+  /**
    * Update a transaction
    */
   static async updateTransaction(
@@ -247,11 +338,12 @@ export class TransactionService {
     return BalanceService.executeInTransaction(async (session) => {
       const { db } = await connectToDatabase()
       const transactionsCollection = db.collection('transactions')
+      const sessionOptions = session ? { session } : {}
 
       // Get existing transaction
       const existingTransaction = await transactionsCollection.findOne(
         { _id: transactionId, userId },
-        { session }
+        sessionOptions
       ) as Transaction | null
 
       if (!existingTransaction) {
@@ -263,20 +355,8 @@ export class TransactionService {
         updates.amount !== undefined ||
         updates.accountId !== undefined ||
         updates.toAccountId !== undefined ||
-        updates.type !== undefined
-
-      // If balance-affecting, revert old changes and apply new ones
-      if (balanceAffectingUpdate && existingTransaction.status === 'completed') {
-        // Revert old balance changes
-        await this.revertBalanceChanges(existingTransaction, session)
-
-        // Apply new balance changes with updated values
-        const updatedTransaction = {
-          ...existingTransaction,
-          ...updates
-        }
-        await this.applyBalanceChanges(updatedTransaction, session)
-      }
+        updates.type !== undefined ||
+        updates.date !== undefined
 
       // Update transaction document
       const updateDoc: Record<string, unknown> = {
@@ -287,11 +367,29 @@ export class TransactionService {
       const result = await transactionsCollection.findOneAndUpdate(
         { _id: transactionId, userId },
         { $set: updateDoc },
-        { returnDocument: 'after', session }
+        { returnDocument: 'after', ...sessionOptions }
       )
 
       if (!result) {
         throw new Error('Failed to update transaction')
+      }
+
+      // If balance-affecting, recalculate all running balances for the account
+      if (balanceAffectingUpdate && existingTransaction.status === 'completed') {
+        await this.recalculateRunningBalances(existingTransaction.accountId, session)
+        
+        // If account changed, also recalculate for the new account
+        if (updates.accountId && !updates.accountId.equals(existingTransaction.accountId)) {
+          await this.recalculateRunningBalances(updates.accountId, session)
+        }
+        
+        // If it's a transfer, recalculate for destination accounts too
+        if (existingTransaction.type === 'transfer' && existingTransaction.toAccountId) {
+          await this.recalculateRunningBalances(existingTransaction.toAccountId, session)
+        }
+        if (updates.toAccountId && existingTransaction.type === 'transfer') {
+          await this.recalculateRunningBalances(updates.toAccountId, session)
+        }
       }
 
       return result as Transaction
@@ -308,27 +406,35 @@ export class TransactionService {
     return BalanceService.executeInTransaction(async (session) => {
       const { db } = await connectToDatabase()
       const transactionsCollection = db.collection('transactions')
+      const sessionOptions = session ? { session } : {}
 
       // Get transaction to revert balance changes
       const transaction = await transactionsCollection.findOne(
         { _id: transactionId, userId },
-        { session }
+        sessionOptions
       ) as Transaction | null
 
       if (!transaction) {
         throw new Error('Transaction not found or unauthorized')
       }
 
-      // Revert balance changes if transaction was completed
-      if (transaction.status === 'completed') {
-        await this.revertBalanceChanges(transaction, session)
-      }
+      const accountId = transaction.accountId
+      const toAccountId = transaction.toAccountId
 
       // Delete transaction
       await transactionsCollection.deleteOne(
         { _id: transactionId, userId },
-        { session }
+        sessionOptions
       )
+
+      // Recalculate running balances for affected accounts
+      if (transaction.status === 'completed') {
+        await this.recalculateRunningBalances(accountId, session)
+        
+        if (transaction.type === 'transfer' && toAccountId) {
+          await this.recalculateRunningBalances(toAccountId, session)
+        }
+      }
     })
   }
 

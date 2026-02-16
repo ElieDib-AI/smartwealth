@@ -27,11 +27,13 @@ import {
   Bitcoin,
   ArrowUpRight,
   ArrowDownRight,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Plus
 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { AccountType } from '@/lib/types'
 import { toast } from 'sonner'
+import { TransactionFormModal, TransactionFormData } from '@/components/transactions/transaction-form-modal'
 
 const accountIcons: Record<AccountType, typeof Wallet> = {
   // Bank Accounts
@@ -68,7 +70,24 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
   const [totalIncome, setTotalIncome] = useState(0)
   const [totalExpenses, setTotalExpenses] = useState(0)
   const [calculatedBalance, setCalculatedBalance] = useState(0)
+  const [showTransactionModal, setShowTransactionModal] = useState(false)
   const hasCheckedRef = useRef(false)
+
+  const fetchAccount = async () => {
+    try {
+      const accountResponse = await fetch(`/api/accounts/${resolvedParams.id}`)
+      const accountData = await accountResponse.json()
+
+      if (accountData.success) {
+        setAccount(accountData.data)
+      } else {
+        toast.error('Failed to load account')
+      }
+    } catch (error) {
+      console.error('Error fetching account:', error)
+      toast.error('Failed to load account')
+    }
+  }
 
   useEffect(() => {
     if (hasCheckedRef.current) return
@@ -178,6 +197,32 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
     }).format(new Date(date))
   }
 
+  const handleCreateTransaction = async (data: TransactionFormData) => {
+    try {
+      const response = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to create transaction')
+      }
+
+      toast.success('Transaction created successfully')
+      setShowTransactionModal(false)
+      
+      // Refresh transactions and account data
+      await fetchTransactions(resolvedParams.id)
+      await fetchAccount()
+    } catch (error) {
+      console.error('Error creating transaction:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to create transaction')
+      throw error
+    }
+  }
+
   if (loading || !user || !account) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
@@ -211,13 +256,23 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
               </p>
             </div>
           </div>
-          <Button
-            onClick={() => router.push('/dashboard')}
-            className="gap-2"
-          >
-            <Edit2 className="h-4 w-4" />
-            Edit Account
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={() => setShowTransactionModal(true)}
+              className="gap-2 bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-700 hover:to-green-600"
+            >
+              <Plus className="h-4 w-4" />
+              Add Transaction
+            </Button>
+            <Button
+              onClick={() => router.push('/dashboard')}
+              variant="outline"
+              className="gap-2"
+            >
+              <Edit2 className="h-4 w-4" />
+              Edit Account
+            </Button>
+          </div>
         </div>
 
         {/* Account Balance Card */}
@@ -426,6 +481,15 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
           </Card>
         </motion.div>
       </div>
+
+      {/* Transaction Form Modal */}
+      <TransactionFormModal
+        open={showTransactionModal}
+        onOpenChange={setShowTransactionModal}
+        accounts={accounts}
+        onSubmit={handleCreateTransaction}
+        defaultAccountId={account._id.toString()}
+      />
     </DashboardLayout>
   )
 }
