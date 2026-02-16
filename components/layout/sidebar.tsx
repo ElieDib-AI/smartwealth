@@ -44,6 +44,7 @@ interface SidebarProps {
   onAddAccount: () => void
   onEditAccount: (account: Account) => void
   onDeleteAccount: (account: Account) => void
+  onHideAccount: (account: Account) => void
   onRefresh: () => void
   onAccountClick?: (accountId: string) => void
 }
@@ -66,6 +67,7 @@ export function Sidebar({
   onAddAccount,
   onEditAccount,
   onDeleteAccount,
+  onHideAccount,
   onRefresh,
   onAccountClick
 }: SidebarProps) {
@@ -291,6 +293,7 @@ export function Sidebar({
                       isCollapsed={isCollapsed}
                       onEdit={onEditAccount}
                       onDelete={onDeleteAccount}
+                      onHide={onHideAccount}
                       onClick={onAccountClick ? () => onAccountClick(account._id.toString()) : undefined}
                     />
                   ))}

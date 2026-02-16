@@ -18,7 +18,8 @@ import {
   Package,
   LineChart,
   Bitcoin,
-  GripVertical
+  GripVertical,
+  EyeOff
 } from 'lucide-react'
 import { Account, AccountType } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -30,6 +31,7 @@ interface AccountListItemProps {
   isCollapsed: boolean
   onEdit: (account: Account) => void
   onDelete: (account: Account) => void
+  onHide: (account: Account) => void
   onClick?: () => void
 }
 
@@ -84,12 +86,14 @@ export function AccountListItem({
   isCollapsed, 
   onEdit, 
   onDelete,
+  onHide,
   onClick 
 }: AccountListItemProps) {
   const router = useRouter()
   const pathname = usePathname()
   const [showMenu, setShowMenu] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
+  const [closeTimeout, setCloseTimeout] = useState<NodeJS.Timeout | null>(null)
   
   const {
     attributes,
@@ -128,30 +132,60 @@ export function AccountListItem({
 
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation()
+    if (closeTimeout) clearTimeout(closeTimeout)
     setShowMenu(false)
+    setIsHovered(false)
     onEdit(account)
+  }
+
+  const handleHide = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (closeTimeout) clearTimeout(closeTimeout)
+    setShowMenu(false)
+    setIsHovered(false)
+    onHide(account)
   }
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation()
+    if (closeTimeout) clearTimeout(closeTimeout)
     setShowMenu(false)
+    setIsHovered(false)
     onDelete(account)
   }
 
   const toggleMenu = (e: React.MouseEvent) => {
     e.stopPropagation()
+    if (closeTimeout) clearTimeout(closeTimeout)
     setShowMenu(!showMenu)
+  }
+
+  const handleMouseLeave = () => {
+    // Add a small delay before closing to allow moving to the menu
+    const timeout = setTimeout(() => {
+      setIsHovered(false)
+      setShowMenu(false)
+    }, 150)
+    setCloseTimeout(timeout)
+  }
+
+  const handleMouseEnter = () => {
+    // Cancel any pending close
+    if (closeTimeout) {
+      clearTimeout(closeTimeout)
+      setCloseTimeout(null)
+    }
+    if (!isCollapsed) {
+      setIsHovered(true)
+    }
   }
 
   return (
     <div ref={setNodeRef} style={style} className="relative">
       <motion.div
         onClick={handleClick}
-        onMouseEnter={() => !isCollapsed && setIsHovered(true)}
-        onMouseLeave={() => {
-          setIsHovered(false)
-          setShowMenu(false)
-        }}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         className={cn(
@@ -239,12 +273,9 @@ export function AccountListItem({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-3 top-full mt-1 z-20 w-40 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1"
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => {
-              setIsHovered(false)
-              setShowMenu(false)
-            }}
+            className="absolute right-0 top-full mt-1 z-20 w-40 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1"
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
           >
             <button
               onClick={handleEdit}
@@ -252,6 +283,13 @@ export function AccountListItem({
             >
               <Edit2 className="h-4 w-4" />
               Edit
+            </button>
+            <button
+              onClick={handleHide}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            >
+              <EyeOff className="h-4 w-4" />
+              Hide
             </button>
             <button
               onClick={handleDelete}

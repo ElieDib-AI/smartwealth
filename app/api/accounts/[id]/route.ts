@@ -95,12 +95,20 @@ export async function PUT(
     }
 
     const body = await request.json()
-    const { name, type, category, balance, currency, institution, color, icon } = body
+    const { name, type, category, balance, currency, institution, color, icon, isActive } = body
 
     // Validation
     if (!name || !type || !category || balance === undefined || !currency || !color || !icon) {
       return NextResponse.json(
         { success: false, error: 'Missing required fields' },
+        { status: 400 }
+      )
+    }
+
+    // Validate isActive if provided
+    if (isActive !== undefined && typeof isActive !== 'boolean') {
+      return NextResponse.json(
+        { success: false, error: 'isActive must be a boolean' },
         { status: 400 }
       )
     }
@@ -155,7 +163,7 @@ export async function PUT(
       )
     }
 
-    const updateData = {
+    const updateData: any = {
       name: name.trim(),
       type,
       category,
@@ -165,6 +173,88 @@ export async function PUT(
       color,
       icon,
       updatedAt: new Date()
+    }
+
+    // Only update isActive if it's explicitly provided
+    if (isActive !== undefined) {
+      updateData.isActive = isActive
+    }
+
+    await accountsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updateData }
+    )
+
+    const updatedAccount = await accountsCollection.findOne({ _id: new ObjectId(id) })
+
+    return NextResponse.json({
+      success: true,
+      data: updatedAccount
+    })
+  } catch (error) {
+    console.error('Error updating account:', error)
+    return NextResponse.json(
+      { success: false, error: 'Failed to update account' },
+      { status: 500 }
+    )
+  }
+}
+
+// PATCH /api/accounts/[id] - Partial update account (e.g., hide/show)
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getAuthUser(request)
+    
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    const { id } = await params
+
+    if (!ObjectId.isValid(id)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid account ID' },
+        { status: 400 }
+      )
+    }
+
+    const body = await request.json()
+    
+    const accountsCollection = await getCollection<Account>('accounts')
+    
+    // Verify ownership
+    const existingAccount = await accountsCollection.findOne({
+      _id: new ObjectId(id),
+      userId: user._id
+    })
+
+    if (!existingAccount) {
+      return NextResponse.json(
+        { success: false, error: 'Account not found' },
+        { status: 404 }
+      )
+    }
+
+    // Build update object with only provided fields
+    const updateData: any = {
+      updatedAt: new Date()
+    }
+
+    // Only update fields that are provided
+    if (body.isActive !== undefined) {
+      if (typeof body.isActive !== 'boolean') {
+        return NextResponse.json(
+          { success: false, error: 'isActive must be a boolean' },
+          { status: 400 }
+        )
+      }
+      updateData.isActive = body.isActive
     }
 
     await accountsCollection.updateOne(

@@ -107,6 +107,30 @@ export function DashboardLayout({ children, user, onAccountClick }: DashboardLay
     }
   }
 
+  const handleHideAccount = async (account: Account) => {
+    try {
+      const response = await fetch(`/api/accounts/${account._id.toString()}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          isActive: false
+        })
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        toast.success('Account hidden successfully')
+        await fetchAccounts()
+      } else {
+        toast.error(result.error || 'Failed to hide account')
+      }
+    } catch (error) {
+      console.error('Error hiding account:', error)
+      toast.error('Failed to hide account')
+    }
+  }
+
   const handleDeleteConfirm = async () => {
     if (!selectedAccount) return
 
@@ -189,6 +213,7 @@ export function DashboardLayout({ children, user, onAccountClick }: DashboardLay
           onAddAccount={handleAddAccount}
           onEditAccount={handleEditAccount}
           onDeleteAccount={handleDeleteAccount}
+          onHideAccount={handleHideAccount}
           onRefresh={fetchAccounts}
           onAccountClick={onAccountClick}
         />
