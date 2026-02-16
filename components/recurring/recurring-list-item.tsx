@@ -35,8 +35,9 @@ export function RecurringListItem({
   const [loading, setLoading] = useState(false)
 
   const isIncome = recurringTransaction.type === 'income'
-  const isExpense = recurringTransaction.type === 'expense'
+  const isExpense = recurringTransaction.type === 'expense' && !recurringTransaction.isSplit
   const isTransfer = recurringTransaction.type === 'transfer'
+  const isLoanPayment = recurringTransaction.type === 'transfer' && recurringTransaction.isSplit
   const overdue = isOverdue(recurringTransaction.nextDueDate)
 
   const handleExecute = async () => {
@@ -98,7 +99,7 @@ export function RecurringListItem({
           <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mt-1">
             {recurringTransaction.isSplit ? (
               <span className="px-2 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded">
-                Split: {recurringTransaction.splits?.length} parts
+                Loan Payment
               </span>
             ) : (
               <span>{recurringTransaction.category}</span>
@@ -112,7 +113,18 @@ export function RecurringListItem({
               </>
             )}
           </div>
-          {recurringTransaction.isSplit && recurringTransaction.splits && (
+          {recurringTransaction.isSplit && recurringTransaction.loanDetails && (
+            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-500 mt-1">
+              <span>
+                Balance: {formatCurrency(recurringTransaction.loanDetails.currentBalance || recurringTransaction.loanDetails.originalAmount, recurringTransaction.currency)} remaining
+              </span>
+              <span>•</span>
+              <span>
+                {Math.round(((recurringTransaction.loanDetails.originalAmount - (recurringTransaction.loanDetails.currentBalance || recurringTransaction.loanDetails.originalAmount)) / recurringTransaction.loanDetails.originalAmount) * 100)}% paid off
+              </span>
+            </div>
+          )}
+          {recurringTransaction.isSplit && recurringTransaction.splits && !recurringTransaction.loanDetails && (
             <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-500 mt-1">
               {recurringTransaction.splits.map((split, idx) => (
                 <span key={idx}>

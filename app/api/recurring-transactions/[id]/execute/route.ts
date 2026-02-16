@@ -4,6 +4,7 @@ import { getAuthUser } from '@/lib/auth'
 import { getCollection } from '@/lib/database'
 import { RecurringTransaction, Transaction } from '@/lib/types'
 import { calculateNextDueDate } from '@/lib/utils/recurring'
+import { getNextPaymentBreakdown } from '@/lib/utils/loan-calculator'
 
 // POST /api/recurring-transactions/[id]/execute - Execute a recurring transaction
 export async function POST(
@@ -28,6 +29,10 @@ export async function POST(
       )
     }
 
+    // Parse request body for optional custom amounts (for loan payments)
+    const body = await request.json().catch(() => ({}))
+    const { principalAmount, interestAmount } = body
+
     const recurringCollection = await getCollection<RecurringTransaction>('recurring_transactions')
     const transactionsCollection = await getCollection<Transaction>('transactions')
     
@@ -48,7 +53,158 @@ export async function POST(
     const now = new Date()
     const createdTransactions: Transaction[] = []
 
-    // Handle split transactions
+    // Handle loan payments with auto-calculated splits
+    if (recurringTx.loanDetails && recurringTx.isSplit) {
+      // Calculate or use provided split amounts
+      let principal: number
+      let interest: number
+
+      if (principalAmount !== undefined && interestAmount !== undefined) {
+        // User provided custom amounts
+        principal = principalAmount
+        interest = interestAmount
+      } else {
+        // Auto-calculate from loan details
+        const breakdown = getNextPaymentBreakdown(
+          recurringTx.loanDetails,
+          recurringTx.lastExecutedAt
+        )
+        principal = breakdown.principal
+        interest = breakdown.interest
+      }
+
+      // Get the latest transaction's running balance for the source account
+      const latestTransaction = await transactionsCollection.findOne(
+        { 
+          userId: user._id, 
+          accountId: recurringTx.accountId 
+        },
+        { sort: { date: -1, createdAt: -1, _id: -1 } }
+      )
+
+      let sourceRunningBalance = latestTransaction?.runningBalance ?? 0
+
+      // Create principal transaction (transfer to loan account)
+      const principalTransaction: Omit<Transaction, '_id'> = {
+        userId: user._id,
+        type: 'transfer',
+        amount: principal,
+        currency: recurringTx.currency,
+        accountId: recurringTx.accountId,
+        toAccountId: recurringTx.toAccountId,
+        transferDirection: 'out',
+        category: 'Principal',
+        description: `${recurringTx.description} - Principal`,
+        notes: recurringTx.notes,
+        date: now,
+        createdAt: now,
+        updatedAt: now,
+        status: 'completed',
+        isRecurring: true,
+        recurringId: recurringTx._id
+      }
+
+      sourceRunningBalance -= principal
+      principalTransaction.runningBalance = sourceRunningBalance
+
+      const principalResult = await transactionsCollection.insertOne(principalTransaction as Transaction)
+      const createdPrincipal = await transactionsCollection.findOne({ _id: principalResult.insertedId })
+      if (createdPrincipal) createdTransactions.push(createdPrincipal)
+
+      // Create corresponding "in" transaction for loan account
+      if (recurringTx.toAccountId) {
+        const latestLoanTransaction = await transactionsCollection.findOne(
+          { 
+            userId: user._id, 
+            accountId: recurringTx.toAccountId 
+          },
+          { sort: { date: -1, createdAt: -1, _id: -1 } }
+        )
+
+        let loanRunningBalance = latestLoanTransaction?.runningBalance ?? 0
+        loanRunningBalance += principal
+
+        const loanInTransaction: Omit<Transaction, '_id'> = {
+          userId: user._id,
+          type: 'transfer',
+          amount: principal,
+          currency: recurringTx.currency,
+          accountId: recurringTx.toAccountId,
+          toAccountId: recurringTx.accountId,
+          transferDirection: 'in',
+          category: 'Principal',
+          description: `${recurringTx.description} - Principal`,
+          notes: recurringTx.notes,
+          date: now,
+          createdAt: now,
+          updatedAt: now,
+          status: 'completed',
+          runningBalance: loanRunningBalance,
+          isRecurring: true,
+          recurringId: recurringTx._id
+        }
+
+        const loanInResult = await transactionsCollection.insertOne(loanInTransaction as Transaction)
+        const createdLoanIn = await transactionsCollection.findOne({ _id: loanInResult.insertedId })
+        if (createdLoanIn) createdTransactions.push(createdLoanIn)
+      }
+
+      // Create interest transaction (expense)
+      const interestTransaction: Omit<Transaction, '_id'> = {
+        userId: user._id,
+        type: 'expense',
+        amount: interest,
+        currency: recurringTx.currency,
+        accountId: recurringTx.accountId,
+        category: 'Interest',
+        description: `${recurringTx.description} - Interest`,
+        notes: recurringTx.notes,
+        date: now,
+        createdAt: now,
+        updatedAt: now,
+        status: 'completed',
+        isRecurring: true,
+        recurringId: recurringTx._id
+      }
+
+      sourceRunningBalance -= interest
+      interestTransaction.runningBalance = sourceRunningBalance
+
+      const interestResult = await transactionsCollection.insertOne(interestTransaction as Transaction)
+      const createdInterest = await transactionsCollection.findOne({ _id: interestResult.insertedId })
+      if (createdInterest) createdTransactions.push(createdInterest)
+
+      // Update loan balance
+      const newBalance = (recurringTx.loanDetails.currentBalance || recurringTx.loanDetails.originalAmount) - principal
+
+      await recurringCollection.updateOne(
+        { _id: recurringTx._id },
+        { 
+          $set: { 
+            'loanDetails.currentBalance': Math.max(0, newBalance),
+            'loanDetails.lastCalculatedAt': now,
+            lastExecutedAt: now,
+            nextDueDate: calculateNextDueDate(
+              recurringTx.nextDueDate,
+              recurringTx.frequency,
+              recurringTx.interval,
+              recurringTx.intervalUnit
+            ),
+            updatedAt: now
+          } 
+        }
+      )
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          transactions: createdTransactions,
+          newLoanBalance: Math.max(0, newBalance)
+        }
+      })
+    }
+
+    // Handle regular split transactions (non-loan)
     if (recurringTx.isSplit && recurringTx.splits && recurringTx.splits.length > 0) {
       // Get the latest transaction's running balance for the source account
       const latestTransaction = await transactionsCollection.findOne(

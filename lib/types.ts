@@ -202,6 +202,16 @@ export interface RecurringTransaction {
   isSplit?: boolean             // Whether this is a split transaction
   splits?: SplitPart[]          // Array of split parts (e.g., principal + interest)
   
+  // Loan Payment Fields (only for loan_payment type)
+  loanDetails?: {
+    originalAmount: number      // Original loan amount
+    interestRate: number         // Annual interest rate (e.g., 5.5 for 5.5%)
+    termMonths: number           // Loan term in months
+    startDate: Date              // When loan started
+    currentBalance?: number      // Calculated remaining balance
+    lastCalculatedAt?: Date      // When balance was last calculated
+  }
+  
   // Frequency Configuration
   frequency: RecurringFrequency
   interval?: number             // For custom: every X days/weeks/months

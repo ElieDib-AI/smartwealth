@@ -28,7 +28,7 @@ interface RecurringFormModalProps {
 }
 
 export interface RecurringFormData {
-  type: 'expense' | 'income' | 'transfer'
+  type: 'expense' | 'income' | 'transfer' | 'loan_payment'
   amount: number
   currency: string
   accountId: string
@@ -45,6 +45,12 @@ export interface RecurringFormData {
     toAccountId?: string
     description?: string
   }>
+  loanDetails?: {
+    originalAmount: number
+    interestRate: number
+    termMonths: number
+    startDate: string
+  }
   frequency: RecurringFrequency
   interval?: number
   intervalUnit?: RecurringIntervalUnit
@@ -53,6 +59,7 @@ export interface RecurringFormData {
 }
 
 const transactionTypes = [
+  { value: 'loan_payment', label: 'Loan Payment' },
   { value: 'expense', label: 'Expense' },
   { value: 'income', label: 'Income' },
   { value: 'transfer', label: 'Transfer' }
@@ -287,7 +294,17 @@ export function RecurringFormModal({
             <Label htmlFor="type">Type</Label>
             <CustomSelect
               value={formData.type}
-              onChange={(value: string) => setFormData({ ...formData, type: value as 'expense' | 'income' | 'transfer' })}
+              onChange={(value: string) => {
+                const newType = value as 'expense' | 'income' | 'transfer' | 'loan_payment'
+                setFormData({ ...formData, type: newType })
+                // Auto-enable split for loan payments
+                if (newType === 'loan_payment') {
+                  setIsSplitEnabled(true)
+                } else if (isSplitEnabled && formData.type === 'loan_payment') {
+                  // If switching away from loan payment, disable split
+                  setIsSplitEnabled(false)
+                }
+              }}
               groups={[{ label: 'Transaction Type', options: transactionTypes }]}
               placeholder="Select type"
             />
@@ -296,7 +313,9 @@ export function RecurringFormModal({
           {/* Amount & Currency */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="amount">Total Amount</Label>
+              <Label htmlFor="amount">
+                {formData.type === 'loan_payment' ? 'Monthly Payment Amount' : 'Total Amount'}
+              </Label>
               <Input
                 id="amount"
                 type="number"
@@ -304,9 +323,9 @@ export function RecurringFormModal({
                 value={formData.amount}
                 onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
                 required
-                disabled={isSplitEnabled}
+                disabled={isSplitEnabled && formData.type !== 'loan_payment'}
               />
-              {isSplitEnabled && (
+              {isSplitEnabled && formData.type !== 'loan_payment' && (
                 <p className="text-xs text-gray-500">
                   Total: {splits.reduce((sum, split) => sum + split.amount, 0).toFixed(2)}
                 </p>
@@ -323,26 +342,8 @@ export function RecurringFormModal({
             </div>
           </div>
 
-          {/* Split Transaction Toggle */}
-          {formData.type === 'expense' && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="isSplit"
-                  checked={isSplitEnabled}
-                  onChange={(e) => setIsSplitEnabled(e.target.checked)}
-                  className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
-                />
-                <Label htmlFor="isSplit" className="cursor-pointer">
-                  Split transaction (e.g., loan payment with principal + interest)
-                </Label>
-              </div>
-            </div>
-          )}
-
-          {/* Split Parts */}
-          {isSplitEnabled && (
+          {/* Split Parts (not shown for loan payments - auto-calculated) */}
+          {isSplitEnabled && formData.type !== 'loan_payment' && (
             <div className="space-y-4 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900">
               <div className="flex items-center justify-between">
                 <Label className="text-base font-semibold">Split Parts</Label>
@@ -486,27 +487,129 @@ export function RecurringFormModal({
             />
           </div>
 
-          {/* To Account (for transfers) */}
-          {formData.type === 'transfer' && !isSplitEnabled && (
+          {/* To Account (for transfers and loan payments) */}
+          {((formData.type === 'transfer' && !isSplitEnabled) || formData.type === 'loan_payment') && (
             <div className="space-y-2">
-              <Label htmlFor="toAccountId">To Account</Label>
+              <Label htmlFor="toAccountId">
+                {formData.type === 'loan_payment' ? 'Loan Account' : 'To Account'}
+              </Label>
               <CustomSelect
                 value={formData.toAccountId || ''}
                 onChange={(value: string) => setFormData({ ...formData, toAccountId: value })}
                 groups={[{ 
-                  label: 'Destination Account', 
+                  label: formData.type === 'loan_payment' ? 'Loan Account' : 'Destination Account', 
                   options: accounts.filter(a => a._id.toString() !== formData.accountId).map(a => ({ 
                     value: a._id.toString(), 
                     label: a.name 
                   }))
                 }]}
-                placeholder="Select destination account"
+                placeholder={formData.type === 'loan_payment' ? 'Select loan account' : 'Select destination account'}
               />
+              {formData.type === 'loan_payment' && (
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  The current balance from this account will be used for calculations
+                </p>
+              )}
             </div>
           )}
 
+          {/* Loan Details (only for loan payments) */}
+          {formData.type === 'loan_payment' && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="originalAmount">Original Loan Amount</Label>
+                <Input
+                  id="originalAmount"
+                  type="number"
+                  step="0.01"
+                  value={formData.loanDetails?.originalAmount || ''}
+                  onChange={(e) => setFormData({ 
+                    ...formData, 
+                    loanDetails: { 
+                      ...formData.loanDetails,
+                      originalAmount: parseFloat(e.target.value) || 0,
+                      interestRate: formData.loanDetails?.interestRate || 0,
+                      termMonths: formData.loanDetails?.termMonths || 0,
+                      startDate: formData.loanDetails?.startDate || new Date().toISOString().split('T')[0]
+                    } 
+                  })}
+                  placeholder="e.g., 250000"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="interestRate">Annual Interest Rate (%)</Label>
+                  <Input
+                    id="interestRate"
+                    type="number"
+                    step="0.01"
+                    value={formData.loanDetails?.interestRate || ''}
+                    onChange={(e) => setFormData({ 
+                      ...formData, 
+                      loanDetails: { 
+                        ...formData.loanDetails,
+                        originalAmount: formData.loanDetails?.originalAmount || 0,
+                        interestRate: parseFloat(e.target.value) || 0,
+                        termMonths: formData.loanDetails?.termMonths || 0,
+                        startDate: formData.loanDetails?.startDate || new Date().toISOString().split('T')[0]
+                      } 
+                    })}
+                    placeholder="e.g., 5.5"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="termMonths">Loan Term (months)</Label>
+                  <Input
+                    id="termMonths"
+                    type="number"
+                    value={formData.loanDetails?.termMonths || ''}
+                    onChange={(e) => setFormData({ 
+                      ...formData, 
+                      loanDetails: { 
+                        ...formData.loanDetails,
+                        originalAmount: formData.loanDetails?.originalAmount || 0,
+                        interestRate: formData.loanDetails?.interestRate || 0,
+                        termMonths: parseInt(e.target.value) || 0,
+                        startDate: formData.loanDetails?.startDate || new Date().toISOString().split('T')[0]
+                      } 
+                    })}
+                    placeholder="e.g., 360"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="loanStartDate">Loan Start Date</Label>
+                <Input
+                  id="loanStartDate"
+                  type="date"
+                  value={formData.loanDetails?.startDate || new Date().toISOString().split('T')[0]}
+                  onChange={(e) => setFormData({ 
+                    ...formData, 
+                    loanDetails: { 
+                      ...formData.loanDetails,
+                      originalAmount: formData.loanDetails?.originalAmount || 0,
+                      interestRate: formData.loanDetails?.interestRate || 0,
+                      termMonths: formData.loanDetails?.termMonths || 0,
+                      startDate: e.target.value
+                    } 
+                  })}
+                  required
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  When the loan was disbursed (first payment is typically one month after)
+                </p>
+              </div>
+            </>
+          )}
+
           {/* Category */}
-          {!isSplitEnabled && (
+          {!isSplitEnabled && formData.type !== 'loan_payment' && (
             <div className="space-y-2">
               <Label htmlFor="category">Category</Label>
               <CustomSelect
@@ -527,7 +630,7 @@ export function RecurringFormModal({
           )}
 
           {/* Custom Category Input */}
-          {showCustomCategory && !isSplitEnabled && (
+          {showCustomCategory && !isSplitEnabled && formData.type !== 'loan_payment' && (
             <div className="space-y-2">
               <Label htmlFor="customCategory">Custom Category Name</Label>
               <Input
