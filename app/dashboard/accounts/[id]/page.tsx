@@ -145,21 +145,11 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
           .filter((t: Transaction) => t.type === 'expense')
           .reduce((sum: number, t: Transaction) => sum + t.amount, 0)
         
-        // Calculate balance from transactions
-        let balance = 0
-        for (const t of txs) {
-          if (t.type === 'income') {
-            balance += t.amount
-          } else if (t.type === 'expense') {
-            balance -= t.amount
-          } else if (t.type === 'transfer') {
-            if (t.transferDirection === 'in') {
-              balance += t.amount
-            } else if (t.transferDirection === 'out') {
-              balance -= t.amount
-            }
-          }
-        }
+        // Use running balance from the most recent transaction (first in desc order)
+        // This is more accurate than calculating from limited transaction set
+        const balance = txs.length > 0 && txs[0].runningBalance !== undefined 
+          ? txs[0].runningBalance 
+          : 0
         
         setTotalIncome(income)
         setTotalExpenses(expenses)

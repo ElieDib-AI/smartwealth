@@ -408,10 +408,10 @@ export class TransactionService {
     const sortField = pagination.sortBy || 'date'
     const sortOrder = pagination.sortOrder === 'asc' ? 1 : -1
 
-    // Get transactions
+    // Get transactions with proper tie-breakers for deterministic sorting
     const transactions = await transactionsCollection
       .find(query)
-      .sort({ [sortField]: sortOrder })
+      .sort({ [sortField]: sortOrder, createdAt: sortOrder, _id: sortOrder })
       .skip(skip)
       .limit(pagination.limit)
       .toArray()
