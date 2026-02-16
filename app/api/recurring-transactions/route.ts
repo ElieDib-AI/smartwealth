@@ -79,8 +79,11 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
 
-    // Validate required fields
-    const requiredFields = ['type', 'amount', 'currency', 'accountId', 'category', 'description', 'frequency', 'startDate']
+    // Validate required fields (category not required if split)
+    const requiredFields = body.isSplit 
+      ? ['type', 'amount', 'currency', 'accountId', 'description', 'frequency', 'startDate']
+      : ['type', 'amount', 'currency', 'accountId', 'category', 'description', 'frequency', 'startDate']
+    
     for (const field of requiredFields) {
       if (!body[field]) {
         return NextResponse.json(
@@ -98,12 +101,47 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate transfer has toAccountId
-    if (body.type === 'transfer' && !body.toAccountId) {
+    // Validate transfer has toAccountId (if not split)
+    if (body.type === 'transfer' && !body.toAccountId && !body.isSplit) {
       return NextResponse.json(
         { success: false, error: 'Transfer requires toAccountId' },
         { status: 400 }
       )
+    }
+
+    // Validate split transactions
+    if (body.isSplit) {
+      if (!body.splits || !Array.isArray(body.splits) || body.splits.length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'Split transaction requires at least one split part' },
+          { status: 400 }
+        )
+      }
+
+      // Validate each split part
+      for (const split of body.splits) {
+        if (!split.type || !split.amount || !split.category) {
+          return NextResponse.json(
+            { success: false, error: 'Each split part requires type, amount, and category' },
+            { status: 400 }
+          )
+        }
+        if (split.type === 'transfer' && !split.toAccountId) {
+          return NextResponse.json(
+            { success: false, error: 'Transfer split requires toAccountId' },
+            { status: 400 }
+          )
+        }
+      }
+
+      // Validate total amount matches sum of splits
+      const splitTotal = body.splits.reduce((sum: number, split: any) => sum + split.amount, 0)
+      if (Math.abs(splitTotal - body.amount) > 0.01) {
+        return NextResponse.json(
+          { success: false, error: 'Split amounts must equal total amount' },
+          { status: 400 }
+        )
+      }
     }
 
     // Validate custom frequency
@@ -136,6 +174,14 @@ export async function POST(request: NextRequest) {
       subcategory: body.subcategory,
       description: body.description,
       notes: body.notes,
+      isSplit: body.isSplit || false,
+      splits: body.isSplit ? body.splits.map((split: any) => ({
+        type: split.type,
+        amount: split.amount,
+        category: split.category,
+        toAccountId: split.toAccountId ? new ObjectId(split.toAccountId) : undefined,
+        description: split.description
+      })) : undefined,
       frequency: body.frequency,
       interval: body.interval,
       intervalUnit: body.intervalUnit,

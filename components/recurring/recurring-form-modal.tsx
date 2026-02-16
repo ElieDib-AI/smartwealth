@@ -14,9 +14,10 @@ import { Label } from '@/components/ui/label'
 import { CustomSelect } from '@/components/ui/custom-select'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Account, RecurringTransaction, RecurringFrequency, RecurringIntervalUnit, CustomCategory } from '@/lib/types'
+import { Account, RecurringTransaction, RecurringFrequency, RecurringIntervalUnit, CustomCategory, SplitPart } from '@/lib/types'
 import { getFrequencyLabel } from '@/lib/utils/recurring'
 import { toast } from 'sonner'
+import { Plus, X } from 'lucide-react'
 
 interface RecurringFormModalProps {
   open: boolean
@@ -36,6 +37,14 @@ export interface RecurringFormData {
   subcategory?: string
   description: string
   notes?: string
+  isSplit?: boolean
+  splits?: Array<{
+    type: 'expense' | 'transfer'
+    amount: number
+    category: string
+    toAccountId?: string
+    description?: string
+  }>
   frequency: RecurringFrequency
   interval?: number
   intervalUnit?: RecurringIntervalUnit
@@ -106,6 +115,17 @@ export function RecurringFormModal({
   const [showCustomCategory, setShowCustomCategory] = useState(false)
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([])
   const [loadingCategories, setLoadingCategories] = useState(false)
+  const [isSplitEnabled, setIsSplitEnabled] = useState(false)
+  const [splits, setSplits] = useState<Array<{
+    type: 'expense' | 'transfer'
+    amount: number
+    category: string
+    toAccountId?: string
+    description?: string
+  }>>([
+    { type: 'transfer', amount: 0, category: 'Principal', toAccountId: '' },
+    { type: 'expense', amount: 0, category: 'Interest' }
+  ])
 
   // Fetch custom categories
   useEffect(() => {
@@ -222,7 +242,14 @@ export function RecurringFormModal({
         }
       }
       
-      await onSubmit(formData)
+      // Add split data if enabled
+      const submitData = {
+        ...formData,
+        isSplit: isSplitEnabled,
+        splits: isSplitEnabled ? splits : undefined
+      }
+      
+      await onSubmit(submitData)
       onOpenChange(false)
     } catch (error) {
       console.error('Error submitting form:', error)
@@ -269,7 +296,7 @@ export function RecurringFormModal({
           {/* Amount & Currency */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="amount">Amount</Label>
+              <Label htmlFor="amount">Total Amount</Label>
               <Input
                 id="amount"
                 type="number"
@@ -277,7 +304,13 @@ export function RecurringFormModal({
                 value={formData.amount}
                 onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
                 required
+                disabled={isSplitEnabled}
               />
+              {isSplitEnabled && (
+                <p className="text-xs text-gray-500">
+                  Total: {splits.reduce((sum, split) => sum + split.amount, 0).toFixed(2)}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="currency">Currency</Label>
@@ -289,6 +322,156 @@ export function RecurringFormModal({
               />
             </div>
           </div>
+
+          {/* Split Transaction Toggle */}
+          {formData.type === 'expense' && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="isSplit"
+                  checked={isSplitEnabled}
+                  onChange={(e) => setIsSplitEnabled(e.target.checked)}
+                  className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                />
+                <Label htmlFor="isSplit" className="cursor-pointer">
+                  Split transaction (e.g., loan payment with principal + interest)
+                </Label>
+              </div>
+            </div>
+          )}
+
+          {/* Split Parts */}
+          {isSplitEnabled && (
+            <div className="space-y-4 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-semibold">Split Parts</Label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSplits([...splits, { type: 'expense', amount: 0, category: '' }])}
+                  className="gap-2"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Part
+                </Button>
+              </div>
+
+              {splits.map((split, index) => (
+                <div key={index} className="space-y-3 p-3 border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-950">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Part {index + 1}</Label>
+                    {splits.length > 1 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setSplits(splits.filter((_, i) => i !== index))}
+                        className="h-6 w-6 p-0"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Type</Label>
+                      <CustomSelect
+                        value={split.type}
+                        onChange={(value: string) => {
+                          const newSplits = [...splits]
+                          newSplits[index].type = value as 'expense' | 'transfer'
+                          setSplits(newSplits)
+                        }}
+                        groups={[{ 
+                          label: 'Type', 
+                          options: [
+                            { value: 'expense', label: 'Expense' },
+                            { value: 'transfer', label: 'Transfer' }
+                          ] 
+                        }]}
+                        placeholder="Type"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">Amount</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={split.amount}
+                        onChange={(e) => {
+                          const newSplits = [...splits]
+                          newSplits[index].amount = parseFloat(e.target.value) || 0
+                          setSplits(newSplits)
+                          // Update total amount
+                          setFormData({ 
+                            ...formData, 
+                            amount: newSplits.reduce((sum, s) => sum + s.amount, 0) 
+                          })
+                        }}
+                        className="h-8"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">Category</Label>
+                    <Input
+                      value={split.category}
+                      onChange={(e) => {
+                        const newSplits = [...splits]
+                        newSplits[index].category = e.target.value
+                        setSplits(newSplits)
+                      }}
+                      placeholder="e.g., Principal, Interest"
+                      className="h-8"
+                      required
+                    />
+                  </div>
+
+                  {split.type === 'transfer' && (
+                    <div className="space-y-1">
+                      <Label className="text-xs">To Account</Label>
+                      <CustomSelect
+                        value={split.toAccountId || ''}
+                        onChange={(value: string) => {
+                          const newSplits = [...splits]
+                          newSplits[index].toAccountId = value
+                          setSplits(newSplits)
+                        }}
+                        groups={[{ 
+                          label: 'Account', 
+                          options: accounts.filter(a => a._id.toString() !== formData.accountId).map(a => ({ 
+                            value: a._id.toString(), 
+                            label: a.name 
+                          }))
+                        }]}
+                        placeholder="Select account"
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">Description (Optional)</Label>
+                    <Input
+                      value={split.description || ''}
+                      onChange={(e) => {
+                        const newSplits = [...splits]
+                        newSplits[index].description = e.target.value
+                        setSplits(newSplits)
+                      }}
+                      placeholder="Optional description"
+                      className="h-8"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Account */}
           <div className="space-y-2">
@@ -304,7 +487,7 @@ export function RecurringFormModal({
           </div>
 
           {/* To Account (for transfers) */}
-          {formData.type === 'transfer' && (
+          {formData.type === 'transfer' && !isSplitEnabled && (
             <div className="space-y-2">
               <Label htmlFor="toAccountId">To Account</Label>
               <CustomSelect
@@ -323,26 +506,28 @@ export function RecurringFormModal({
           )}
 
           {/* Category */}
-          <div className="space-y-2">
-            <Label htmlFor="category">Category</Label>
-            <CustomSelect
-              value={showCustomCategory ? 'Custom' : formData.category}
-              onChange={(value: string) => {
-                if (value === 'Custom') {
-                  setShowCustomCategory(true)
-                  setFormData({ ...formData, category: customCategory })
-                } else {
-                  setShowCustomCategory(false)
-                  setFormData({ ...formData, category: value })
-                }
-              }}
-              groups={[{ label: 'Categories', options: categories.map(c => ({ value: c, label: c })) }]}
-              placeholder="Select category"
-            />
-          </div>
+          {!isSplitEnabled && (
+            <div className="space-y-2">
+              <Label htmlFor="category">Category</Label>
+              <CustomSelect
+                value={showCustomCategory ? 'Custom' : formData.category}
+                onChange={(value: string) => {
+                  if (value === 'Custom') {
+                    setShowCustomCategory(true)
+                    setFormData({ ...formData, category: customCategory })
+                  } else {
+                    setShowCustomCategory(false)
+                    setFormData({ ...formData, category: value })
+                  }
+                }}
+                groups={[{ label: 'Categories', options: categories.map(c => ({ value: c, label: c })) }]}
+                placeholder="Select category"
+              />
+            </div>
+          )}
 
           {/* Custom Category Input */}
-          {showCustomCategory && (
+          {showCustomCategory && !isSplitEnabled && (
             <div className="space-y-2">
               <Label htmlFor="customCategory">Custom Category Name</Label>
               <Input

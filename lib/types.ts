@@ -166,6 +166,17 @@ export interface CustomCategory {
 export type RecurringFrequency = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'semiannually' | 'yearly' | 'custom'
 export type RecurringIntervalUnit = 'days' | 'weeks' | 'months'
 
+// Split Transaction types (for loan payments, etc.)
+export type SplitType = 'expense' | 'transfer'
+
+export interface SplitPart {
+  type: SplitType
+  amount: number
+  category: string
+  toAccountId?: ObjectId        // For transfer splits
+  description?: string          // Optional description for this part
+}
+
 export interface RecurringTransaction {
   _id: ObjectId
   userId: ObjectId
@@ -177,7 +188,7 @@ export interface RecurringTransaction {
   
   // Account References
   accountId: ObjectId           // Source account for expense/transfer, destination for income
-  toAccountId?: ObjectId        // Only for transfers
+  toAccountId?: ObjectId        // Only for transfers (when not split)
   
   // Categorization
   category: string
@@ -186,6 +197,10 @@ export interface RecurringTransaction {
   // Description
   description: string
   notes?: string
+  
+  // Split Transaction Support
+  isSplit?: boolean             // Whether this is a split transaction
+  splits?: SplitPart[]          // Array of split parts (e.g., principal + interest)
   
   // Frequency Configuration
   frequency: RecurringFrequency

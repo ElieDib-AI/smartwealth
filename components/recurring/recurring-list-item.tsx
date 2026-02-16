@@ -96,7 +96,13 @@ export function RecurringListItem({
             )}
           </div>
           <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mt-1">
-            <span>{recurringTransaction.category}</span>
+            {recurringTransaction.isSplit ? (
+              <span className="px-2 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded">
+                Split: {recurringTransaction.splits?.length} parts
+              </span>
+            ) : (
+              <span>{recurringTransaction.category}</span>
+            )}
             <span>•</span>
             <span>{recurringTransaction.accountName}</span>
             {isTransfer && recurringTransaction.toAccountName && (
@@ -106,6 +112,16 @@ export function RecurringListItem({
               </>
             )}
           </div>
+          {recurringTransaction.isSplit && recurringTransaction.splits && (
+            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-500 mt-1">
+              {recurringTransaction.splits.map((split, idx) => (
+                <span key={idx}>
+                  {split.category}: {formatCurrency(split.amount, recurringTransaction.currency)}
+                  {idx < recurringTransaction.splits!.length - 1 && ' + '}
+                </span>
+              ))}
+            </div>
+          )}
           <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-500 mt-1">
             <span>{getFrequencyLabel(recurringTransaction.frequency, recurringTransaction.interval, recurringTransaction.intervalUnit)}</span>
             <span>•</span>
