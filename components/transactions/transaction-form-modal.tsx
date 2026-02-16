@@ -40,6 +40,14 @@ export interface TransactionFormData {
   tags?: string[]
   date: string
   status?: 'completed' | 'pending' | 'cancelled'
+  currencyConversion?: {
+    fromCurrency: string
+    toCurrency: string
+    fromAmount: number
+    toAmount: number
+    exchangeRate: number
+    conversionDate: Date
+  }
 }
 
 export function TransactionFormModal({
@@ -65,6 +73,8 @@ export function TransactionFormModal({
   const [customCategories, setCustomCategories] = useState<string[]>([])
   const [isCustomCategory, setIsCustomCategory] = useState(false)
   const [customCategoryInput, setCustomCategoryInput] = useState('')
+  const [convertedAmount, setConvertedAmount] = useState<number | undefined>(undefined)
+  const [showCurrencyConversion, setShowCurrencyConversion] = useState(false)
 
   useEffect(() => {
     if (open) {
@@ -107,6 +117,8 @@ export function TransactionFormModal({
     setErrors({})
     setIsCustomCategory(false)
     setCustomCategoryInput('')
+    setConvertedAmount(undefined)
+    setShowCurrencyConversion(false)
   }, [transaction, accounts, open, defaultAccountId])
 
   const fetchCustomCategories = async () => {
@@ -137,6 +149,29 @@ export function TransactionFormModal({
       accountId,
       currency: account?.currency || prev.currency
     }))
+    checkCurrencyConversion(accountId, formData.toAccountId)
+  }
+
+  const handleToAccountChange = (toAccountId: string) => {
+    setFormData(prev => ({ ...prev, toAccountId }))
+    checkCurrencyConversion(formData.accountId, toAccountId)
+  }
+
+  const checkCurrencyConversion = (fromAccountId?: string, toAccountId?: string) => {
+    if (!fromAccountId || !toAccountId) {
+      setShowCurrencyConversion(false)
+      return
+    }
+
+    const fromAccount = accounts.find(a => a._id.toString() === fromAccountId)
+    const toAccount = accounts.find(a => a._id.toString() === toAccountId)
+
+    if (fromAccount && toAccount && fromAccount.currency !== toAccount.currency) {
+      setShowCurrencyConversion(true)
+    } else {
+      setShowCurrencyConversion(false)
+      setConvertedAmount(undefined)
+    }
   }
 
   const getCategoryOptions = (): Array<{ label: string; value: string; icon?: string }> => {
@@ -194,6 +229,9 @@ export function TransactionFormModal({
     if (formData.type === 'transfer' && formData.accountId === formData.toAccountId) {
       newErrors.toAccountId = 'Source and destination accounts must be different'
     }
+    if (formData.type === 'transfer' && showCurrencyConversion && (!convertedAmount || convertedAmount <= 0)) {
+      newErrors.convertedAmount = 'Converted amount is required for currency transfers'
+    }
     if (formData.type !== 'transfer') {
       if (isCustomCategory && !customCategoryInput.trim()) {
         newErrors.category = 'Custom category name is required'
@@ -214,6 +252,12 @@ export function TransactionFormModal({
     
     // If custom category is being entered, use that value
     let finalFormData = { ...formData }
+    
+    // For transfers, set a default category if not provided
+    if (finalFormData.type === 'transfer' && !finalFormData.category) {
+      finalFormData.category = 'Transfer'
+    }
+    
     if (isCustomCategory && customCategoryInput.trim()) {
       finalFormData.category = customCategoryInput.trim()
       
@@ -234,6 +278,23 @@ export function TransactionFormModal({
           }
         } catch (error) {
           console.error('Error creating custom category:', error)
+        }
+      }
+    }
+
+    // Add currency conversion data for cross-currency transfers
+    if (finalFormData.type === 'transfer' && showCurrencyConversion && convertedAmount) {
+      const fromAccount = accounts.find(a => a._id.toString() === finalFormData.accountId)
+      const toAccount = accounts.find(a => a._id.toString() === finalFormData.toAccountId)
+      
+      if (fromAccount && toAccount) {
+        finalFormData.currencyConversion = {
+          fromCurrency: fromAccount.currency,
+          toCurrency: toAccount.currency,
+          fromAmount: finalFormData.amount,
+          toAmount: convertedAmount,
+          exchangeRate: convertedAmount / finalFormData.amount,
+          conversionDate: new Date(finalFormData.date)
         }
       }
     }
@@ -374,7 +435,7 @@ export function TransactionFormModal({
                 <Select
                   id="toAccountId"
                   value={formData.toAccountId || ''}
-                  onChange={(e) => setFormData(prev => ({ ...prev, toAccountId: e.target.value }))}
+                  onChange={(e) => handleToAccountChange(e.target.value)}
                   className={errors.toAccountId ? 'border-red-500' : ''}
                 >
                   <option value="">Select account</option>
@@ -390,6 +451,52 @@ export function TransactionFormModal({
               </div>
             )}
           </div>
+
+          {/* Currency Conversion (for cross-currency transfers) */}
+          {formData.type === 'transfer' && showCurrencyConversion && (
+            <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg space-y-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-amber-800 dark:text-amber-400">
+                <span>💱</span>
+                <span>Currency Conversion Required</span>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="fromAmount" className="text-sm">
+                    Amount Sent ({accounts.find(a => a._id.toString() === formData.accountId)?.currency}) *
+                  </Label>
+                  <Input
+                    id="fromAmount"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={formData.amount || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
+                    className="font-semibold"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="toAmount" className="text-sm">
+                    Amount Received ({accounts.find(a => a._id.toString() === formData.toAccountId)?.currency}) *
+                  </Label>
+                  <Input
+                    id="toAmount"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={convertedAmount || ''}
+                    onChange={(e) => setConvertedAmount(parseFloat(e.target.value) || 0)}
+                    className={`font-semibold ${errors.convertedAmount ? 'border-red-500' : ''}`}
+                  />
+                  {errors.convertedAmount && <p className="text-xs text-red-500 mt-1">{errors.convertedAmount}</p>}
+                </div>
+              </div>
+              {formData.amount > 0 && convertedAmount && convertedAmount > 0 && (
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  Exchange Rate: 1 {accounts.find(a => a._id.toString() === formData.accountId)?.currency} = {(convertedAmount / formData.amount).toFixed(4)} {accounts.find(a => a._id.toString() === formData.toAccountId)?.currency}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Category (not for transfers) */}
           {formData.type !== 'transfer' && (

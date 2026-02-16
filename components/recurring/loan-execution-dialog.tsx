@@ -68,7 +68,7 @@ export function LoanExecutionDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
+        <div className="px-6 space-y-6 py-4">
           {/* Payment Breakdown */}
           <div className="space-y-4">
             <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">

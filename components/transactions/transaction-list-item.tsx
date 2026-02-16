@@ -38,26 +38,38 @@ export function TransactionListItem({
   }
 
   const getTypeColor = () => {
-    switch (transaction.type) {
-      case 'income':
+    if (transaction.type === 'income') {
+      return 'text-green-600 dark:text-green-400'
+    } else if (transaction.type === 'expense') {
+      return 'text-red-600 dark:text-red-400'
+    } else if (transaction.type === 'transfer') {
+      // For transfers, use direction to determine color
+      if (transaction.transferDirection === 'in') {
         return 'text-green-600 dark:text-green-400'
-      case 'expense':
+      } else if (transaction.transferDirection === 'out') {
         return 'text-red-600 dark:text-red-400'
-      case 'transfer':
-        return 'text-blue-600 dark:text-blue-400'
+      }
+      return 'text-blue-600 dark:text-blue-400'
     }
+    return 'text-gray-600 dark:text-gray-400'
   }
 
   const getAmountDisplay = () => {
     const amount = formatCurrency(transaction.amount, transaction.currency)
-    switch (transaction.type) {
-      case 'income':
+    if (transaction.type === 'income') {
+      return `+${amount}`
+    } else if (transaction.type === 'expense') {
+      return `-${amount}`
+    } else if (transaction.type === 'transfer') {
+      // For transfers, use direction to determine sign
+      if (transaction.transferDirection === 'in') {
         return `+${amount}`
-      case 'expense':
+      } else if (transaction.transferDirection === 'out') {
         return `-${amount}`
-      case 'transfer':
-        return amount
+      }
+      return amount
     }
+    return amount
   }
 
   return (
@@ -113,19 +125,6 @@ export function TransactionListItem({
               {transaction.notes}
             </p>
           )}
-
-          {transaction.tags && transaction.tags.length > 0 && (
-            <div className="flex gap-1 mt-2">
-              {transaction.tags.map((tag, index) => (
-                <span
-                  key={index}
-                  className="px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
         </div>
       </div>
 
@@ -138,6 +137,11 @@ export function TransactionListItem({
           <p className="text-xs text-gray-500 dark:text-gray-400">
             {format(new Date(transaction.date), 'MMM d, yyyy')}
           </p>
+          {transaction.runningBalance !== undefined && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              Balance: {formatCurrency(transaction.runningBalance, transaction.currency)}
+            </p>
+          )}
         </div>
 
         {/* Actions */}

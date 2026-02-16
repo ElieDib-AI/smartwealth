@@ -88,7 +88,8 @@ export function AccountListItem({
 }: AccountListItemProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const [showActions, setShowActions] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
+  const [isHovered, setIsHovered] = useState(false)
   
   const {
     attributes,
@@ -127,27 +128,30 @@ export function AccountListItem({
 
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation()
-    setShowActions(false)
+    setShowMenu(false)
     onEdit(account)
   }
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation()
-    setShowActions(false)
+    setShowMenu(false)
     onDelete(account)
   }
 
-  const toggleActions = (e: React.MouseEvent) => {
+  const toggleMenu = (e: React.MouseEvent) => {
     e.stopPropagation()
-    setShowActions(!showActions)
+    setShowMenu(!showMenu)
   }
 
   return (
     <div ref={setNodeRef} style={style} className="relative">
       <motion.div
         onClick={handleClick}
-        onMouseEnter={() => !isCollapsed && setShowActions(true)}
-        onMouseLeave={() => setShowActions(false)}
+        onMouseEnter={() => !isCollapsed && setIsHovered(true)}
+        onMouseLeave={() => {
+          setIsHovered(false)
+          setShowMenu(false)
+        }}
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         className={cn(
@@ -205,16 +209,21 @@ export function AccountListItem({
           )}
         </AnimatePresence>
 
-        {/* Actions Button */}
+        {/* Actions Button - Shows on hover */}
         <AnimatePresence mode="wait">
-          {!isCollapsed && showActions && (
+          {!isCollapsed && isHovered && (
             <motion.div
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
               transition={{ duration: 0.15 }}
-              onClick={toggleActions}
-              className="flex-shrink-0 p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+              onClick={toggleMenu}
+              className={cn(
+                "flex-shrink-0 p-1 rounded transition-colors cursor-pointer",
+                showMenu 
+                  ? "bg-gray-200 dark:bg-gray-700" 
+                  : "hover:bg-gray-200 dark:hover:bg-gray-700"
+              )}
             >
               <MoreVertical className="h-4 w-4 text-gray-600 dark:text-gray-400" />
             </motion.div>
@@ -222,17 +231,20 @@ export function AccountListItem({
         </AnimatePresence>
       </motion.div>
 
-      {/* Actions Menu */}
+      {/* Actions Menu - Only shows when 3-dot button is clicked */}
       <AnimatePresence>
-        {showActions && !isCollapsed && (
+        {showMenu && !isCollapsed && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.15 }}
             className="absolute right-3 top-full mt-1 z-20 w-40 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1"
-            onMouseEnter={() => setShowActions(true)}
-            onMouseLeave={() => setShowActions(false)}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => {
+              setIsHovered(false)
+              setShowMenu(false)
+            }}
           >
             <button
               onClick={handleEdit}

@@ -34,6 +34,7 @@ import {
 import { motion } from 'framer-motion'
 import { AccountType } from '@/lib/types'
 import { toast } from 'sonner'
+import { emitAccountUpdate } from '@/lib/events/account-events'
 import { TransactionFormModal, TransactionFormData } from '@/components/transactions/transaction-form-modal'
 import { TransactionListItem } from '@/components/transactions/transaction-list-item'
 
@@ -239,6 +240,9 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
         // Refresh transactions and account data
         await fetchTransactions(resolvedParams.id)
         await fetchAccount()
+        
+        // Notify sidebar to refresh accounts
+        emitAccountUpdate()
       } else {
         toast.error(result.error || 'Failed to save transaction')
       }
@@ -265,6 +269,9 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
         // Refresh transactions and account data
         await fetchTransactions(resolvedParams.id)
         await fetchAccount()
+        
+        // Notify sidebar to refresh accounts
+        emitAccountUpdate()
       } else {
         toast.error(data.error || 'Failed to delete transaction')
       }

@@ -15,6 +15,7 @@ import { Plus, Repeat } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import { generateOccurrences } from '@/lib/utils/recurring'
+import { emitAccountUpdate } from '@/lib/events/account-events'
 
 export default function RecurringTransactionsPage() {
   const router = useRouter()
@@ -131,7 +132,9 @@ export default function RecurringTransactionsPage() {
     if (recurring.type === 'transfer' && recurring.isSplit && recurring.loanDetails) {
       // Fetch the loan payment breakdown
       try {
-        const response = await fetch(`/api/recurring-transactions/${id}/calculate-split`)
+        const response = await fetch(`/api/recurring-transactions/${id}/calculate-split`, {
+          method: 'POST'
+        })
         const result = await response.json()
         
         if (result.success) {
@@ -172,6 +175,7 @@ export default function RecurringTransactionsPage() {
         toast.success('Loan payment executed successfully')
         setShowLoanDialog(false)
         setLoanExecutionRecurring(null)
+        emitAccountUpdate() // Notify sidebar to refresh
         fetchData()
       } else {
         toast.error(result.error || 'Failed to execute loan payment')
@@ -205,6 +209,7 @@ export default function RecurringTransactionsPage() {
         toast.success('Transaction executed successfully')
         setShowExecutionDialog(false)
         setExecutionRecurring(null)
+        emitAccountUpdate() // Notify sidebar to refresh
         fetchData()
       } else {
         toast.error(result.error || 'Failed to execute transaction')

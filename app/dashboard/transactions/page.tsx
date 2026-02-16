@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { AuthUser } from '@/lib/auth'
 import { toast } from 'sonner'
+import { emitAccountUpdate } from '@/lib/events/account-events'
 
 export default function TransactionsPage() {
   const router = useRouter()
@@ -180,6 +181,7 @@ export default function TransactionsPage() {
         toast.success(selectedTransaction ? 'Transaction updated successfully' : 'Transaction added successfully')
         fetchTransactions()
         fetchAccounts() // Refresh accounts to update balances
+        emitAccountUpdate() // Notify sidebar to refresh
         setIsFormOpen(false)
       } else {
         toast.error(data.error || 'Failed to save transaction')
@@ -204,6 +206,7 @@ export default function TransactionsPage() {
         toast.success('Transaction deleted successfully')
         fetchTransactions()
         fetchAccounts() // Refresh accounts to update balances
+        emitAccountUpdate() // Notify sidebar to refresh
         setIsDeleteDialogOpen(false)
       } else {
         toast.error(data.error || 'Failed to delete transaction')

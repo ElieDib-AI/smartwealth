@@ -11,6 +11,7 @@ import { DeleteAccountDialog } from '@/components/accounts/delete-account-dialog
 import { AuthUser } from '@/lib/auth'
 import { Account } from '@/lib/types'
 import { toast } from 'sonner'
+import { onAccountUpdate } from '@/lib/events/account-events'
 
 interface DashboardLayoutProps {
   children: React.ReactNode
@@ -54,6 +55,13 @@ export function DashboardLayout({ children, user, onAccountClick }: DashboardLay
 
   useEffect(() => {
     fetchAccounts()
+    
+    // Listen for account update events from other components
+    const unsubscribe = onAccountUpdate(() => {
+      fetchAccounts()
+    })
+    
+    return unsubscribe
   }, [])
 
   const handleAddAccount = () => {

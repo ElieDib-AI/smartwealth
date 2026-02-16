@@ -91,8 +91,12 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
 
-    // Validate required fields
-    const requiredFields = ['type', 'amount', 'currency', 'accountId', 'category', 'description', 'date']
+    // Validate required fields (category not required for transfers)
+    const requiredFields = ['type', 'amount', 'currency', 'accountId', 'description', 'date']
+    if (body.type !== 'transfer') {
+      requiredFields.push('category')
+    }
+    
     for (const field of requiredFields) {
       if (!body[field]) {
         return NextResponse.json(

@@ -163,9 +163,74 @@ export class TransactionService {
         runningBalance
       }
 
-      // Insert transaction
-      const result = await transactionsCollection.insertOne(transactionWithBalance, sessionOptions)
+      // Insert transaction (the "out" transaction for transfers)
+      const result = await transactionsCollection.insertOne({
+        ...transactionWithBalance,
+        transferDirection: transaction.type === 'transfer' ? 'out' : undefined
+      }, sessionOptions)
       const insertedId = result.insertedId
+
+      // For transfers, create the corresponding "in" transaction in the destination account
+      if (transaction.type === 'transfer' && input.toAccountId) {
+        // Determine the amount for the destination account
+        const destinationAmount = transaction.currencyConversion
+          ? transaction.currencyConversion.toAmount
+          : transaction.amount
+        
+        // Get destination account to determine currency
+        const toAccount = await accountsCollection.findOne(
+          { _id: input.toAccountId },
+          sessionOptions
+        )
+        const destinationCurrency = toAccount?.currency || transaction.currency
+
+        // Calculate running balance for the "in" transaction
+        let inRunningBalance: number | undefined
+        if (transaction.status === 'completed') {
+          const previousInTransaction = await transactionsCollection.findOne(
+            { 
+              userId: input.userId,
+              accountId: input.toAccountId,
+              status: 'completed',
+              $or: [
+                { date: { $lt: transaction.date } },
+                { 
+                  date: transaction.date,
+                  createdAt: { $lt: transaction.createdAt }
+                }
+              ]
+            },
+            { ...sessionOptions, sort: { date: -1, createdAt: -1, _id: -1 } }
+          )
+          
+          const startingInBalance = previousInTransaction?.runningBalance ?? 0
+          inRunningBalance = startingInBalance + destinationAmount
+        }
+
+        // Create the "in" transaction
+        const inTransaction: Omit<Transaction, '_id'> = {
+          userId: input.userId,
+          type: 'transfer',
+          amount: destinationAmount,
+          currency: destinationCurrency,
+          accountId: input.toAccountId,
+          toAccountId: input.accountId,
+          category: input.category,
+          subcategory: input.subcategory,
+          description: input.description,
+          notes: input.notes,
+          tags: input.tags,
+          date: input.date,
+          status: input.status || 'completed',
+          currencyConversion: transaction.currencyConversion,
+          transferDirection: 'in',
+          runningBalance: inRunningBalance,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }
+
+        await transactionsCollection.insertOne(inTransaction, sessionOptions)
+      }
 
       // Update balances based on transaction type
       if (transaction.status === 'completed') {
@@ -182,7 +247,8 @@ export class TransactionService {
 
       return {
         ...transactionWithBalance,
-        _id: insertedId
+        _id: insertedId,
+        transferDirection: transaction.type === 'transfer' ? 'out' : undefined
       } as Transaction
     })
   }
