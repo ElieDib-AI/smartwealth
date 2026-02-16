@@ -83,6 +83,7 @@ export interface Account {
   color: string // for visual identification
   icon: string // lucide icon name
   isActive: boolean
+  displayOrder?: number // for custom ordering via drag and drop
   createdAt: Date
   updatedAt: Date
 }

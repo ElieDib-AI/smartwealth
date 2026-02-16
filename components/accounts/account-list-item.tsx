@@ -17,10 +17,13 @@ import {
   Gem,
   Package,
   LineChart,
-  Bitcoin
+  Bitcoin,
+  GripVertical
 } from 'lucide-react'
 import { Account, AccountType } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 interface AccountListItemProps {
   account: Account
@@ -87,6 +90,21 @@ export function AccountListItem({
   const pathname = usePathname()
   const [showActions, setShowActions] = useState(false)
   
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: account._id.toString() })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+  
   const Icon = accountIcons[account.type] || Wallet
   const gradient = accountGradients[account.type] || accountGradients.checking
   
@@ -125,7 +143,7 @@ export function AccountListItem({
   }
 
   return (
-    <div className="relative">
+    <div ref={setNodeRef} style={style} className="relative">
       <motion.div
         onClick={handleClick}
         onMouseEnter={() => !isCollapsed && setShowActions(true)}
@@ -133,14 +151,27 @@ export function AccountListItem({
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         className={cn(
-          "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors relative cursor-pointer",
+          "w-full flex items-center gap-2 px-3 py-2.5 rounded-lg transition-colors relative cursor-pointer",
           isActive 
             ? "bg-primary-50 dark:bg-primary-900/20 ring-2 ring-primary-600/20" 
             : "hover:bg-gray-100 dark:hover:bg-gray-800",
-          isCollapsed && "justify-center"
+          isCollapsed && "justify-center",
+          isDragging && "shadow-lg ring-2 ring-primary-500"
         )}
         title={isCollapsed ? `${account.name}: ${formatCurrency(account.balance)}` : undefined}
       >
+        {/* Drag Handle */}
+        {!isCollapsed && (
+          <div
+            {...attributes}
+            {...listeners}
+            className="flex-shrink-0 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <GripVertical className="h-4 w-4" />
+          </div>
+        )}
+
         {/* Icon */}
         <div className={cn(
           "flex-shrink-0 w-10 h-10 rounded-lg bg-gradient-to-br flex items-center justify-center",

@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     
     const accounts = await accountsCollection
       .find(query)
-      .sort({ createdAt: -1 })
+      .sort({ displayOrder: 1, createdAt: -1 })
       .toArray()
 
     // Get transactions collection to get latest running balance

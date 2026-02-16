@@ -19,6 +19,22 @@ import { Button } from '@/components/ui/button'
 import { Account } from '@/lib/types'
 import { AccountListItem } from '@/components/accounts/account-list-item'
 import { cn } from '@/lib/utils'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { toast } from 'sonner'
 
 interface SidebarProps {
   accounts: Account[]
@@ -56,10 +72,58 @@ export function Sidebar({
   const router = useRouter()
   const pathname = usePathname()
   const [mounted, setMounted] = useState(false)
+  const [localAccounts, setLocalAccounts] = useState<Account[]>(accounts)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
 
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  useEffect(() => {
+    setLocalAccounts(accounts)
+  }, [accounts])
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event
+
+    if (!over || active.id === over.id) {
+      return
+    }
+
+    const oldIndex = localAccounts.findIndex((acc) => acc._id.toString() === active.id)
+    const newIndex = localAccounts.findIndex((acc) => acc._id.toString() === over.id)
+
+    const newOrder = arrayMove(localAccounts, oldIndex, newIndex)
+    setLocalAccounts(newOrder)
+
+    // Update order in backend
+    try {
+      const response = await fetch('/api/accounts/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountIds: newOrder.map(acc => acc._id.toString())
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to update order')
+      }
+
+      toast.success('Account order updated')
+      onRefresh()
+    } catch (error) {
+      console.error('Error updating account order:', error)
+      toast.error('Failed to update account order')
+      setLocalAccounts(accounts) // Revert on error
+    }
+  }
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -197,7 +261,7 @@ export function Sidebar({
           </AnimatePresence>
 
           <div className="space-y-1">
-            {accounts.length === 0 ? (
+            {localAccounts.length === 0 ? (
               <AnimatePresence mode="wait">
                 {!isCollapsed && (
                   <motion.p
@@ -211,16 +275,27 @@ export function Sidebar({
                 )}
               </AnimatePresence>
             ) : (
-              accounts.map((account) => (
-                <AccountListItem
-                  key={account._id.toString()}
-                  account={account}
-                  isCollapsed={isCollapsed}
-                  onEdit={onEditAccount}
-                  onDelete={onDeleteAccount}
-                  onClick={onAccountClick ? () => onAccountClick(account._id.toString()) : undefined}
-                />
-              ))
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={localAccounts.map(acc => acc._id.toString())}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {localAccounts.map((account) => (
+                    <AccountListItem
+                      key={account._id.toString()}
+                      account={account}
+                      isCollapsed={isCollapsed}
+                      onEdit={onEditAccount}
+                      onDelete={onDeleteAccount}
+                      onClick={onAccountClick ? () => onAccountClick(account._id.toString()) : undefined}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
             )}
           </div>
         </div>
