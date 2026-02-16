@@ -123,27 +123,37 @@ export class TransactionService {
       // Calculate running balance before inserting
       let runningBalance: number | undefined
       if (transaction.status === 'completed') {
-        // Get current account balance
-        const currentAccount = await accountsCollection.findOne(
-          { _id: input.accountId },
-          sessionOptions
+        // Find the transaction immediately before this one by date
+        const previousTransaction = await transactionsCollection.findOne(
+          { 
+            userId: input.userId,
+            accountId: input.accountId,
+            status: 'completed',
+            $or: [
+              { date: { $lt: transaction.date } },
+              { 
+                date: transaction.date,
+                createdAt: { $lt: transaction.createdAt }
+              }
+            ]
+          },
+          { ...sessionOptions, sort: { date: -1, createdAt: -1, _id: -1 } }
         )
         
-        if (currentAccount) {
-          const currentBalance = currentAccount.balance as number
-          
-          // Calculate what the new balance will be after this transaction
-          switch (transaction.type) {
-            case 'expense':
-              runningBalance = currentBalance - transaction.amount
-              break
-            case 'income':
-              runningBalance = currentBalance + transaction.amount
-              break
-            case 'transfer':
-              runningBalance = currentBalance - transaction.amount
-              break
-          }
+        // Start with previous transaction's balance, or 0 if this is the first
+        let startingBalance = previousTransaction?.runningBalance ?? 0
+        
+        // Calculate what the new balance will be after this transaction
+        switch (transaction.type) {
+          case 'expense':
+            runningBalance = startingBalance - transaction.amount
+            break
+          case 'income':
+            runningBalance = startingBalance + transaction.amount
+            break
+          case 'transfer':
+            runningBalance = startingBalance - transaction.amount
+            break
         }
       }
 
@@ -155,15 +165,24 @@ export class TransactionService {
 
       // Insert transaction
       const result = await transactionsCollection.insertOne(transactionWithBalance, sessionOptions)
+      const insertedId = result.insertedId
 
       // Update balances based on transaction type
       if (transaction.status === 'completed') {
         await this.applyBalanceChanges(transaction, session)
+        
+        // Recalculate running balances for all transactions after this one
+        await this.recalculateRunningBalancesFromTransaction(input.accountId, insertedId, session)
+        
+        // If it's a transfer, also recalculate for the destination account
+        if (transaction.type === 'transfer' && input.toAccountId) {
+          await this.recalculateRunningBalancesFromTransaction(input.toAccountId, insertedId, session)
+        }
       }
 
       return {
         ...transactionWithBalance,
-        _id: result.insertedId
+        _id: insertedId
       } as Transaction
     })
   }
@@ -271,9 +290,9 @@ export class TransactionService {
   }
 
   /**
-   * Recalculate running balances for all transactions in an account
+   * Recalculate running balances for all transactions in an account (used after delete)
    */
-  private static async recalculateRunningBalances(
+  private static async recalculateAllRunningBalances(
     accountId: ObjectId,
     session: ClientSession | null
   ): Promise<void> {
@@ -288,10 +307,123 @@ export class TransactionService {
       .sort({ date: 1, createdAt: 1, _id: 1 })
       .toArray() as Transaction[]
 
-    if (transactions.length === 0) return
+    if (transactions.length === 0) {
+      // No transactions, set account balance to 0
+      await accountsCollection.updateOne(
+        { _id: accountId },
+        { $set: { balance: 0, updatedAt: new Date() } },
+        sessionOptions
+      )
+      return
+    }
 
-    // Start with 0 and calculate running balance for each transaction
+    // Calculate running balances
     let runningBalance = 0
+    const bulkOps = []
+    const now = new Date()
+
+    for (const tx of transactions) {
+      switch (tx.type) {
+        case 'income':
+          runningBalance += tx.amount
+          break
+        case 'expense':
+          runningBalance -= tx.amount
+          break
+        case 'transfer':
+          if (tx.transferDirection === 'out') {
+            runningBalance -= tx.amount
+          } else if (tx.transferDirection === 'in') {
+            runningBalance += tx.amount
+          }
+          break
+      }
+
+      bulkOps.push({
+        updateOne: {
+          filter: { _id: tx._id },
+          update: { $set: { runningBalance, updatedAt: now } }
+        }
+      })
+    }
+
+    // Execute bulk update
+    if (bulkOps.length > 0) {
+      await transactionsCollection.bulkWrite(bulkOps, sessionOptions)
+    }
+
+    // Update account balance
+    await accountsCollection.updateOne(
+      { _id: accountId },
+      { $set: { balance: runningBalance, updatedAt: now } },
+      sessionOptions
+    )
+  }
+
+  /**
+   * Recalculate running balances for a transaction and all subsequent transactions
+   */
+  private static async recalculateRunningBalancesFromTransaction(
+    accountId: ObjectId,
+    fromTransactionId: ObjectId,
+    session: ClientSession | null
+  ): Promise<void> {
+    const { db } = await connectToDatabase()
+    const transactionsCollection = db.collection('transactions')
+    const accountsCollection = db.collection('accounts')
+    const sessionOptions = session ? { session } : {}
+
+    // Get the transaction that was modified
+    const modifiedTx = await transactionsCollection.findOne(
+      { _id: fromTransactionId },
+      sessionOptions
+    ) as Transaction | null
+
+    if (!modifiedTx) return
+
+    // Get the transaction immediately before this one to get the starting balance
+    const previousTx = await transactionsCollection.findOne(
+      { 
+        accountId, 
+        status: 'completed',
+        $or: [
+          { date: { $lt: modifiedTx.date } },
+          { 
+            date: modifiedTx.date,
+            $or: [
+              { createdAt: { $lt: modifiedTx.createdAt } },
+              { createdAt: modifiedTx.createdAt, _id: { $lt: modifiedTx._id } }
+            ]
+          }
+        ]
+      },
+      { ...sessionOptions, sort: { date: -1, createdAt: -1, _id: -1 } }
+    ) as Transaction | null
+
+    // Start with the previous transaction's balance, or 0 if this is the first transaction
+    let runningBalance = previousTx?.runningBalance ?? 0
+
+    // Get all transactions from this one onwards, sorted by date
+    const transactions = await transactionsCollection
+      .find({ 
+        accountId, 
+        status: 'completed',
+        $or: [
+          { date: { $gt: modifiedTx.date } },
+          { 
+            date: modifiedTx.date,
+            $or: [
+              { createdAt: { $gt: modifiedTx.createdAt } },
+              { createdAt: modifiedTx.createdAt, _id: { $gte: modifiedTx._id } }
+            ]
+          }
+        ]
+      }, sessionOptions)
+      .sort({ date: 1, createdAt: 1, _id: 1 })
+      .toArray() as Transaction[]
+
+    const bulkOps = []
+    const now = new Date()
 
     for (const tx of transactions) {
       // Calculate the balance after this transaction
@@ -311,18 +443,24 @@ export class TransactionService {
           break
       }
 
-      // Update the transaction with the new running balance
-      await transactionsCollection.updateOne(
-        { _id: tx._id },
-        { $set: { runningBalance, updatedAt: new Date() } },
-        sessionOptions
-      )
+      // Add to bulk operations
+      bulkOps.push({
+        updateOne: {
+          filter: { _id: tx._id },
+          update: { $set: { runningBalance, updatedAt: now } }
+        }
+      })
+    }
+
+    // Execute all updates in a single bulk operation
+    if (bulkOps.length > 0) {
+      await transactionsCollection.bulkWrite(bulkOps, sessionOptions)
     }
 
     // Update the account balance to match the final running balance
     await accountsCollection.updateOne(
       { _id: accountId },
-      { $set: { balance: runningBalance, updatedAt: new Date() } },
+      { $set: { balance: runningBalance, updatedAt: now } },
       sessionOptions
     )
   }
@@ -374,21 +512,21 @@ export class TransactionService {
         throw new Error('Failed to update transaction')
       }
 
-      // If balance-affecting, recalculate all running balances for the account
+      // If balance-affecting, recalculate running balances from this transaction onwards
       if (balanceAffectingUpdate && existingTransaction.status === 'completed') {
-        await this.recalculateRunningBalances(existingTransaction.accountId, session)
+        await this.recalculateRunningBalancesFromTransaction(existingTransaction.accountId, transactionId, session)
         
         // If account changed, also recalculate for the new account
         if (updates.accountId && !updates.accountId.equals(existingTransaction.accountId)) {
-          await this.recalculateRunningBalances(updates.accountId, session)
+          await this.recalculateRunningBalancesFromTransaction(updates.accountId, transactionId, session)
         }
         
         // If it's a transfer, recalculate for destination accounts too
         if (existingTransaction.type === 'transfer' && existingTransaction.toAccountId) {
-          await this.recalculateRunningBalances(existingTransaction.toAccountId, session)
+          await this.recalculateRunningBalancesFromTransaction(existingTransaction.toAccountId, transactionId, session)
         }
         if (updates.toAccountId && existingTransaction.type === 'transfer') {
-          await this.recalculateRunningBalances(updates.toAccountId, session)
+          await this.recalculateRunningBalancesFromTransaction(updates.toAccountId, transactionId, session)
         }
       }
 
@@ -427,12 +565,12 @@ export class TransactionService {
         sessionOptions
       )
 
-      // Recalculate running balances for affected accounts
+      // Recalculate running balances for affected accounts (full recalc needed after delete)
       if (transaction.status === 'completed') {
-        await this.recalculateRunningBalances(accountId, session)
+        await this.recalculateAllRunningBalances(accountId, session)
         
         if (transaction.type === 'transfer' && toAccountId) {
-          await this.recalculateRunningBalances(toAccountId, session)
+          await this.recalculateAllRunningBalances(toAccountId, session)
         }
       }
     })

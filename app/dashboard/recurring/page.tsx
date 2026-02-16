@@ -10,6 +10,7 @@ import { RecurringTransaction, Account } from '@/lib/types'
 import { RecurringFormModal, RecurringFormData } from '@/components/recurring/recurring-form-modal'
 import { RecurringListItem } from '@/components/recurring/recurring-list-item'
 import { LoanExecutionDialog } from '@/components/recurring/loan-execution-dialog'
+import { RecurringExecutionDialog } from '@/components/recurring/recurring-execution-dialog'
 import { Plus, Repeat } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { toast } from 'sonner'
@@ -26,6 +27,8 @@ export default function RecurringTransactionsPage() {
   const [loanExecutionRecurring, setLoanExecutionRecurring] = useState<RecurringTransaction | null>(null)
   const [loanBreakdown, setLoanBreakdown] = useState<any>(null)
   const [showLoanDialog, setShowLoanDialog] = useState(false)
+  const [executionRecurring, setExecutionRecurring] = useState<RecurringTransaction & { accountName?: string; toAccountName?: string } | null>(null)
+  const [showExecutionDialog, setShowExecutionDialog] = useState(false)
   const hasCheckedRef = useRef(false)
 
   useEffect(() => {
@@ -122,8 +125,10 @@ export default function RecurringTransactionsPage() {
     // Find the recurring transaction
     const recurring = recurringTransactions.find(r => r._id.toString() === id)
     
+    if (!recurring) return
+    
     // Check if it's a loan payment
-    if (recurring && recurring.type === 'transfer' && recurring.isSplit && recurring.loanDetails) {
+    if (recurring.type === 'transfer' && recurring.isSplit && recurring.loanDetails) {
       // Fetch the loan payment breakdown
       try {
         const response = await fetch(`/api/recurring-transactions/${id}/calculate-split`)
@@ -143,24 +148,9 @@ export default function RecurringTransactionsPage() {
       return
     }
 
-    // For non-loan transactions, execute directly
-    try {
-      const response = await fetch(`/api/recurring-transactions/${id}/execute`, {
-        method: 'POST'
-      })
-
-      const result = await response.json()
-
-      if (result.success) {
-        toast.success('Transaction executed successfully')
-        fetchData()
-      } else {
-        toast.error(result.error || 'Failed to execute transaction')
-      }
-    } catch (error) {
-      console.error('Error executing transaction:', error)
-      toast.error('Failed to execute transaction')
-    }
+    // For all other transactions, show confirmation dialog
+    setExecutionRecurring(recurring)
+    setShowExecutionDialog(true)
   }
 
   const handleLoanExecutionConfirm = async (principalAmount: number, interestAmount: number) => {
@@ -189,6 +179,40 @@ export default function RecurringTransactionsPage() {
     } catch (error) {
       console.error('Error executing loan payment:', error)
       toast.error('Failed to execute loan payment')
+    }
+  }
+
+  const handleExecutionConfirm = async (data: {
+    amount: number
+    description: string
+    notes?: string
+    date: string
+    accountId?: string
+    toAccountId?: string
+  }) => {
+    if (!executionRecurring) return
+
+    try {
+      const response = await fetch(`/api/recurring-transactions/${executionRecurring._id.toString()}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        toast.success('Transaction executed successfully')
+        setShowExecutionDialog(false)
+        setExecutionRecurring(null)
+        fetchData()
+      } else {
+        toast.error(result.error || 'Failed to execute transaction')
+      }
+    } catch (error) {
+      console.error('Error executing transaction:', error)
+      toast.error('Failed to execute transaction')
+      throw error
     }
   }
 
@@ -371,6 +395,17 @@ export default function RecurringTransactionsPage() {
                 : 'Loan Account'
             }
             onConfirm={handleLoanExecutionConfirm}
+          />
+        )}
+
+        {/* General Recurring Execution Dialog */}
+        {executionRecurring && (
+          <RecurringExecutionDialog
+            open={showExecutionDialog}
+            onOpenChange={setShowExecutionDialog}
+            recurringTransaction={executionRecurring}
+            accounts={accounts}
+            onConfirm={handleExecutionConfirm}
           />
         )}
       </div>

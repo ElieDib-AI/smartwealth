@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { AuthUser } from '@/lib/auth'
 import { Account, Transaction } from '@/lib/types'
 import { 
@@ -34,6 +35,7 @@ import { motion } from 'framer-motion'
 import { AccountType } from '@/lib/types'
 import { toast } from 'sonner'
 import { TransactionFormModal, TransactionFormData } from '@/components/transactions/transaction-form-modal'
+import { TransactionListItem } from '@/components/transactions/transaction-list-item'
 
 const accountIcons: Record<AccountType, typeof Wallet> = {
   // Bank Accounts
@@ -71,6 +73,8 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
   const [totalExpenses, setTotalExpenses] = useState(0)
   const [calculatedBalance, setCalculatedBalance] = useState(0)
   const [showTransactionModal, setShowTransactionModal] = useState(false)
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const hasCheckedRef = useRef(false)
 
   const fetchAccount = async () => {
@@ -197,29 +201,76 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
     }).format(new Date(date))
   }
 
-  const handleCreateTransaction = async (data: TransactionFormData) => {
+  const handleAddTransaction = () => {
+    setSelectedTransaction(null)
+    setShowTransactionModal(true)
+  }
+
+  const handleEditTransaction = (transaction: Transaction) => {
+    setSelectedTransaction(transaction)
+    setShowTransactionModal(true)
+  }
+
+  const handleDeleteTransaction = (transaction: Transaction) => {
+    setSelectedTransaction(transaction)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleSubmitTransaction = async (data: TransactionFormData) => {
     try {
-      const response = await fetch('/api/transactions', {
-        method: 'POST',
+      const url = selectedTransaction
+        ? `/api/transactions/${selectedTransaction._id}`
+        : '/api/transactions'
+      
+      const method = selectedTransaction ? 'PUT' : 'POST'
+
+      const response = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       })
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to create transaction')
-      }
+      const result = await response.json()
 
-      toast.success('Transaction created successfully')
-      setShowTransactionModal(false)
-      
-      // Refresh transactions and account data
-      await fetchTransactions(resolvedParams.id)
-      await fetchAccount()
+      if (result.success) {
+        toast.success(selectedTransaction ? 'Transaction updated successfully' : 'Transaction created successfully')
+        setShowTransactionModal(false)
+        
+        // Refresh transactions and account data
+        await fetchTransactions(resolvedParams.id)
+        await fetchAccount()
+      } else {
+        toast.error(result.error || 'Failed to save transaction')
+      }
     } catch (error) {
-      console.error('Error creating transaction:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to create transaction')
-      throw error
+      console.error('Error saving transaction:', error)
+      toast.error('Failed to save transaction')
+    }
+  }
+
+  const confirmDelete = async () => {
+    if (!selectedTransaction) return
+
+    try {
+      const response = await fetch(`/api/transactions/${selectedTransaction._id}`, {
+        method: 'DELETE'
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        toast.success('Transaction deleted successfully')
+        setIsDeleteDialogOpen(false)
+        
+        // Refresh transactions and account data
+        await fetchTransactions(resolvedParams.id)
+        await fetchAccount()
+      } else {
+        toast.error(data.error || 'Failed to delete transaction')
+      }
+    } catch (error) {
+      console.error('Error deleting transaction:', error)
+      toast.error('Failed to delete transaction')
     }
   }
 
@@ -258,7 +309,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
           </div>
           <div className="flex items-center gap-3">
             <Button
-              onClick={() => setShowTransactionModal(true)}
+              onClick={handleAddTransaction}
               className="gap-2 bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-700 hover:to-green-600"
             >
               <Plus className="h-4 w-4" />
@@ -410,71 +461,17 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
                   </Button>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {transactions.map((transaction) => {
-                    const isIncome = transaction.type === 'income'
-                    const isExpense = transaction.type === 'expense'
-                    const isTransfer = transaction.type === 'transfer'
-                    
-                    // For transfers: use the transferDirection field
-                    const isTransferOut = isTransfer && transaction.transferDirection === 'out'
-                    const isTransferIn = isTransfer && transaction.transferDirection === 'in'
-                    
-                    return (
-                      <div
-                        key={transaction._id.toString()}
-                        className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                            isIncome ? 'bg-green-100 dark:bg-green-900/20' :
-                            isExpense ? 'bg-red-100 dark:bg-red-900/20' :
-                            'bg-blue-100 dark:bg-blue-900/20'
-                          }`}>
-                            {isIncome && <ArrowDownRight className="h-5 w-5 text-green-600" />}
-                            {isExpense && <ArrowUpRight className="h-5 w-5 text-red-600" />}
-                            {isTransfer && <ArrowLeftRight className="h-5 w-5 text-blue-600" />}
-                          </div>
-                          <div>
-                            <p className="font-medium">{transaction.description || 'No description'}</p>
-                            <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                              <span>{transaction.category || 'Uncategorized'}</span>
-                              <span>•</span>
-                              <span>{formatDate(transaction.date)}</span>
-                              {isTransferOut && transaction.toAccountName && (
-                                <>
-                                  <span>•</span>
-                                  <span>To {transaction.toAccountName}</span>
-                                </>
-                              )}
-                              {isTransferIn && transaction.toAccountName && (
-                                <>
-                                  <span>•</span>
-                                  <span>From {transaction.toAccountName}</span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className={`font-semibold ${
-                            transaction.amount === 0 ? 'text-blue-600' :
-                            isIncome || isTransferIn ? 'text-green-600' :
-                            isExpense || isTransferOut ? 'text-red-600' :
-                            'text-blue-600'
-                          }`}>
-                            {transaction.amount === 0 ? '' : (isIncome || isTransferIn) ? '+' : (isExpense || isTransferOut) ? '-' : ''}
-                            {formatCurrency(transaction.amount, transaction.currency)}
-                          </p>
-                          {transaction.runningBalance !== undefined && (
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                              Balance: {formatCurrency(transaction.runningBalance, transaction.currency)}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
+                <div className="space-y-3">
+                  {transactions.map((transaction) => (
+                    <TransactionListItem
+                      key={transaction._id.toString()}
+                      transaction={transaction}
+                      accountName={account.name}
+                      toAccountName={transaction.toAccountName}
+                      onEdit={handleEditTransaction}
+                      onDelete={handleDeleteTransaction}
+                    />
+                  ))}
                 </div>
               )}
             </CardContent>
@@ -486,10 +483,31 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
       <TransactionFormModal
         open={showTransactionModal}
         onOpenChange={setShowTransactionModal}
+        transaction={selectedTransaction}
         accounts={accounts}
-        onSubmit={handleCreateTransaction}
+        onSubmit={handleSubmitTransaction}
         defaultAccountId={account._id.toString()}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Transaction</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this transaction? This action cannot be undone and will revert the balance changes.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   )
 }

@@ -29,9 +29,9 @@ export async function POST(
       )
     }
 
-    // Parse request body for optional custom amounts (for loan payments)
+    // Parse request body for optional custom amounts (for loan payments) or overrides (for regular transactions)
     const body = await request.json().catch(() => ({}))
-    const { principalAmount, interestAmount } = body
+    const { principalAmount, interestAmount, amount, description, notes, date, accountId, toAccountId } = body
 
     const recurringCollection = await getCollection<RecurringTransaction>('recurring_transactions')
     const transactionsCollection = await getCollection<Transaction>('transactions')
@@ -289,18 +289,24 @@ export async function POST(
       }
     } else {
       // Regular (non-split) transaction
+      const transactionDate = date ? new Date(date) : now
+      
+      // Use override accountId if provided, otherwise use recurring transaction's accountId
+      const finalAccountId = accountId ? new ObjectId(accountId) : recurringTx.accountId
+      const finalToAccountId = toAccountId ? new ObjectId(toAccountId) : recurringTx.toAccountId
+      
       const newTransaction: Omit<Transaction, '_id'> = {
         userId: user._id,
         type: recurringTx.type,
-        amount: recurringTx.amount,
+        amount: amount !== undefined ? amount : recurringTx.amount,
         currency: recurringTx.currency,
-        accountId: recurringTx.accountId,
-        toAccountId: recurringTx.toAccountId,
+        accountId: finalAccountId,
+        toAccountId: finalToAccountId,
         category: recurringTx.category,
         subcategory: recurringTx.subcategory,
-        description: recurringTx.description,
-        notes: recurringTx.notes,
-        date: now,
+        description: description || recurringTx.description,
+        notes: notes !== undefined ? notes : recurringTx.notes,
+        date: transactionDate,
         createdAt: now,
         updatedAt: now,
         status: 'completed',
@@ -309,7 +315,7 @@ export async function POST(
       }
 
       // For transfers, set transferDirection
-      if (recurringTx.type === 'transfer' && recurringTx.toAccountId) {
+      if (recurringTx.type === 'transfer' && finalToAccountId) {
         newTransaction.transferDirection = 'out'
       }
 
@@ -317,7 +323,7 @@ export async function POST(
       const latestTransaction = await transactionsCollection.findOne(
         { 
           userId: user._id, 
-          accountId: recurringTx.accountId 
+          accountId: finalAccountId 
         },
         { sort: { date: -1, createdAt: -1, _id: -1 } }
       )
@@ -341,20 +347,26 @@ export async function POST(
     }
 
     // If it's a regular (non-split) transfer, create the corresponding transaction for the destination account
-    if (!recurringTx.isSplit && recurringTx.type === 'transfer' && recurringTx.toAccountId) {
+    const finalAccountId = accountId ? new ObjectId(accountId) : recurringTx.accountId
+    const finalToAccountId = toAccountId ? new ObjectId(toAccountId) : recurringTx.toAccountId
+    
+    if (!recurringTx.isSplit && recurringTx.type === 'transfer' && finalToAccountId) {
+      const transactionDate = date ? new Date(date) : now
+      const transactionAmount = amount !== undefined ? amount : recurringTx.amount
+      
       const transferInTransaction: Omit<Transaction, '_id'> = {
         userId: user._id,
         type: 'transfer',
-        amount: recurringTx.amount,
+        amount: transactionAmount,
         currency: recurringTx.currency,
-        accountId: recurringTx.toAccountId,
-        toAccountId: recurringTx.accountId,
+        accountId: finalToAccountId,
+        toAccountId: finalAccountId,
         transferDirection: 'in',
         category: recurringTx.category,
         subcategory: recurringTx.subcategory,
-        description: recurringTx.description,
-        notes: recurringTx.notes,
-        date: now,
+        description: description || recurringTx.description,
+        notes: notes !== undefined ? notes : recurringTx.notes,
+        date: transactionDate,
         createdAt: now,
         updatedAt: now,
         status: 'completed',
@@ -366,7 +378,7 @@ export async function POST(
       const latestToTransaction = await transactionsCollection.findOne(
         { 
           userId: user._id, 
-          accountId: recurringTx.toAccountId 
+          accountId: finalToAccountId 
         },
         { sort: { date: -1, createdAt: -1, _id: -1 } }
       )
