@@ -107,7 +107,8 @@ export interface Transaction {
   type: TransactionType
   
   // Amount & Currency
-  amount: number                // Amount in original currency
+  amount: number                // Absolute amount (always positive) - used for display, filtering, reports
+  signedAmount: number          // Signed amount: positive = money in, negative = money out - used for calculations
   currency: string              // Original currency (AED, USD, EUR, etc.)
   
   // Multi-currency support (for reporting and conversions)
@@ -117,10 +118,10 @@ export interface Transaction {
   exchangeRate?: number        // Exchange rate used (original to USD)
   
   // Account References
-  accountId: ObjectId           // Source account for expense/transfer, destination for income
-  toAccountId?: ObjectId        // Only for transfers
+  accountId: ObjectId           // The account this transaction belongs to
+  toAccountId?: ObjectId        // Only for transfers: the other account involved
   toAccountName?: string        // Enriched field: name of the transfer destination account
-  transferDirection?: 'in' | 'out' // For transfers: 'out' = money leaving accountId, 'in' = money entering accountId
+  transferDirection?: 'in' | 'out' // DEPRECATED: Use signedAmount instead. Will be removed in future version.
   
   // Categorization
   category: string              // Category name (predefined or custom)
@@ -148,6 +149,7 @@ export interface Transaction {
   // Future-proofing
   isRecurring?: boolean         // For future recurring transactions
   recurringId?: ObjectId        // Link to recurring template
+  recurringDueDate?: Date       // Original scheduled due date (for tracking which occurrence was executed)
   attachments?: string[]        // For future receipt uploads
   splitTransactionId?: ObjectId // For future split transactions
 }
@@ -225,6 +227,9 @@ export interface RecurringTransaction {
   
   // Status
   isActive: boolean
+  
+  // Skipped Dates (for "delete this occurrence only" feature)
+  skippedDates?: Date[]         // Array of dates that should be skipped
   
   // Metadata
   createdAt: Date

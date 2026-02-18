@@ -7,6 +7,9 @@ export interface BalanceUpdate {
   operation: 'add' | 'subtract'
 }
 
+// Track if we've already warned about transactions not being supported
+let hasWarnedAboutTransactions = false
+
 export class BalanceService {
   /**
    * Update account balance atomically within a MongoDB session
@@ -129,7 +132,12 @@ export class BalanceService {
     } catch (error) {
       // If transaction fails due to replica set requirement, fall back to non-transactional
       if (error instanceof Error && error.message.includes('replica set')) {
-        console.warn('MongoDB transactions not supported, falling back to non-transactional execution')
+        // Only warn once to avoid console spam
+        if (!hasWarnedAboutTransactions) {
+          console.warn('⚠️  MongoDB transactions not supported (not running as replica set). Using non-transactional mode.')
+          console.warn('   To enable transactions, set up MongoDB as a replica set or set MONGODB_USE_TRANSACTIONS=false in .env')
+          hasWarnedAboutTransactions = true
+        }
         return await callback(null)
       }
       throw error

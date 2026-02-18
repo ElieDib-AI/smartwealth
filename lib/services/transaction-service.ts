@@ -96,11 +96,26 @@ export class TransactionService {
         }
       }
 
+      // Calculate signedAmount based on transaction type
+      let signedAmount: number
+      switch (input.type) {
+        case 'income':
+          signedAmount = input.amount // Positive
+          break
+        case 'expense':
+          signedAmount = -input.amount // Negative
+          break
+        case 'transfer':
+          signedAmount = -input.amount // Negative (money leaving source account)
+          break
+      }
+
       // Create transaction document
       const transaction: Omit<Transaction, '_id'> = {
         userId: input.userId,
         type: input.type,
         amount: input.amount,
+        signedAmount: signedAmount,
         currency: input.currency,
         accountId: input.accountId,
         toAccountId: input.toAccountId,
@@ -212,6 +227,7 @@ export class TransactionService {
           userId: input.userId,
           type: 'transfer',
           amount: destinationAmount,
+          signedAmount: destinationAmount, // Positive (money entering destination account)
           currency: destinationCurrency,
           accountId: input.toAccountId,
           toAccountId: input.accountId,
@@ -229,20 +245,22 @@ export class TransactionService {
           updatedAt: new Date()
         }
 
-        await transactionsCollection.insertOne(inTransaction, sessionOptions)
+        const inResult = await transactionsCollection.insertOne(inTransaction, sessionOptions)
+        const inTransactionId = inResult.insertedId
+        
+        // Store the in transaction ID for recalculation
+        if (transaction.status === 'completed') {
+          // Recalculate for destination account using the correct transaction ID
+          await this.recalculateRunningBalancesFromTransaction(input.toAccountId, inTransactionId, session)
+        }
       }
 
       // Update balances based on transaction type
       if (transaction.status === 'completed') {
         await this.applyBalanceChanges(transaction, session)
         
-        // Recalculate running balances for all transactions after this one
+        // Recalculate running balances for all transactions after this one (source account)
         await this.recalculateRunningBalancesFromTransaction(input.accountId, insertedId, session)
-        
-        // If it's a transfer, also recalculate for the destination account
-        if (transaction.type === 'transfer' && input.toAccountId) {
-          await this.recalculateRunningBalancesFromTransaction(input.toAccountId, insertedId, session)
-        }
       }
 
       return {
@@ -389,20 +407,27 @@ export class TransactionService {
     const now = new Date()
 
     for (const tx of transactions) {
-      switch (tx.type) {
-        case 'income':
-          runningBalance += tx.amount
-          break
-        case 'expense':
-          runningBalance -= tx.amount
-          break
-        case 'transfer':
-          if (tx.transferDirection === 'out') {
-            runningBalance -= tx.amount
-          } else if (tx.transferDirection === 'in') {
+      // Simple calculation using signedAmount
+      // Fallback to old logic if signedAmount doesn't exist (for backward compatibility during migration)
+      if (tx.signedAmount !== undefined) {
+        runningBalance += tx.signedAmount
+      } else {
+        // Legacy fallback
+        switch (tx.type) {
+          case 'income':
             runningBalance += tx.amount
-          }
-          break
+            break
+          case 'expense':
+            runningBalance -= tx.amount
+            break
+          case 'transfer':
+            if (tx.transferDirection === 'out') {
+              runningBalance -= tx.amount
+            } else if (tx.transferDirection === 'in') {
+              runningBalance += tx.amount
+            }
+            break
+        }
       }
 
       bulkOps.push({
@@ -429,10 +454,14 @@ export class TransactionService {
   /**
    * Recalculate running balances for a transaction and all subsequent transactions
    */
-  private static async recalculateRunningBalancesFromTransaction(
+  /**
+   * Recalculate running balances for all transactions from a specific transaction onwards
+   * This is useful when a backdated transaction is inserted or a transaction is modified
+   */
+  static async recalculateRunningBalancesFromTransaction(
     accountId: ObjectId,
     fromTransactionId: ObjectId,
-    session: ClientSession | null
+    session: ClientSession | null = null
   ): Promise<void> {
     const { db } = await connectToDatabase()
     const transactionsCollection = db.collection('transactions')
@@ -493,20 +522,27 @@ export class TransactionService {
 
     for (const tx of transactions) {
       // Calculate the balance after this transaction
-      switch (tx.type) {
-        case 'income':
-          runningBalance += tx.amount
-          break
-        case 'expense':
-          runningBalance -= tx.amount
-          break
-        case 'transfer':
-          if (tx.transferDirection === 'out') {
-            runningBalance -= tx.amount
-          } else if (tx.transferDirection === 'in') {
+      // Simple calculation using signedAmount
+      // Fallback to old logic if signedAmount doesn't exist (for backward compatibility during migration)
+      if (tx.signedAmount !== undefined) {
+        runningBalance += tx.signedAmount
+      } else {
+        // Legacy fallback
+        switch (tx.type) {
+          case 'income':
             runningBalance += tx.amount
-          }
-          break
+            break
+          case 'expense':
+            runningBalance -= tx.amount
+            break
+          case 'transfer':
+            if (tx.transferDirection === 'out') {
+              runningBalance -= tx.amount
+            } else if (tx.transferDirection === 'in') {
+              runningBalance += tx.amount
+            }
+            break
+        }
       }
 
       // Add to bulk operations

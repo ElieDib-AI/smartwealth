@@ -18,9 +18,9 @@ import { cn } from '@/lib/utils'
 
 interface RecurringListItemProps {
   recurringTransaction: RecurringTransaction & { accountName?: string; toAccountName?: string }
-  onExecute: (id: string) => void
+  onExecute: (id: string, dueDate: Date) => void
   onEdit: (recurringTransaction: RecurringTransaction) => void
-  onDelete: (id: string) => void
+  onDelete: (id: string, dueDate: Date) => void
   showExecute?: boolean // Whether to show execute button (vs edit only)
 }
 
@@ -43,7 +43,7 @@ export function RecurringListItem({
   const handleExecute = async () => {
     setLoading(true)
     try {
-      await onExecute(recurringTransaction._id.toString())
+      await onExecute(recurringTransaction._id.toString(), recurringTransaction.nextDueDate)
     } finally {
       setLoading(false)
     }
@@ -215,7 +215,7 @@ export function RecurringListItem({
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => onDelete(recurringTransaction._id.toString())}
+                      onClick={() => onDelete(recurringTransaction._id.toString(), recurringTransaction.nextDueDate)}
                       className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -245,7 +245,7 @@ export function RecurringListItem({
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => onDelete(recurringTransaction._id.toString())}
+                      onClick={() => onDelete(recurringTransaction._id.toString(), recurringTransaction.nextDueDate)}
                       className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
                     >
                       <Trash2 className="h-4 w-4" />

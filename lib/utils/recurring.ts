@@ -156,7 +156,10 @@ export function formatDueDate(nextDueDate: Date): string {
 
 /**
  * Generate all occurrences of a recurring transaction
- * from the past (if not executed) up to 1 year from today
+ * Shows ALL past unexecuted occurrences + future occurrences up to 1 year from today
+ * 
+ * Note: We generate all occurrences from start date and let the UI/backend filter
+ * based on actual executed transactions, not just lastExecutedAt.
  */
 export function generateOccurrences(
   startDate: Date,
@@ -164,35 +167,41 @@ export function generateOccurrences(
   interval?: number,
   intervalUnit?: RecurringIntervalUnit,
   endDate?: Date,
-  lastExecutedAt?: Date
+  lastExecutedAt?: Date,
+  skippedDates?: Date[]
 ): Date[] {
   const occurrences: Date[] = []
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
   
-  const oneYearFromNow = new Date(today)
+  // Get today in UTC to avoid timezone issues
+  const today = new Date()
+  const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()))
+  
+  const oneYearFromNow = new Date(todayUTC)
   oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1)
   
-  // Start from the start date
+  // Start from the start date (keep as UTC)
   let currentDate = new Date(startDate)
-  currentDate.setHours(0, 0, 0, 0)
-  
-  // If there's a lastExecutedAt, start from the next occurrence after that
-  if (lastExecutedAt) {
-    const lastExecuted = new Date(lastExecutedAt)
-    lastExecuted.setHours(0, 0, 0, 0)
-    currentDate = calculateNextDueDate(lastExecuted, frequency, interval, intervalUnit)
-  }
   
   // Generate occurrences up to 1 year from now or end date (whichever is earlier)
   const maxDate = endDate && new Date(endDate) < oneYearFromNow ? new Date(endDate) : oneYearFromNow
+  
+  // Convert skipped dates to ISO strings for comparison
+  const skippedDatesISO = new Set(
+    (skippedDates || []).map(date => new Date(date).toISOString())
+  )
   
   // Limit to 100 occurrences to prevent infinite loops
   let count = 0
   const maxOccurrences = 100
   
   while (currentDate <= maxDate && count < maxOccurrences) {
-    occurrences.push(new Date(currentDate))
+    const currentDateISO = new Date(currentDate).toISOString()
+    
+    // Only add if not in skipped dates
+    if (!skippedDatesISO.has(currentDateISO)) {
+      occurrences.push(new Date(currentDate))
+    }
+    
     currentDate = calculateNextDueDate(currentDate, frequency, interval, intervalUnit)
     count++
   }

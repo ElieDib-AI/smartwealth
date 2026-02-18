@@ -136,7 +136,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
   const fetchTransactions = async (accountId: string) => {
     setLoadingTransactions(true)
     try {
-      const response = await fetch(`/api/transactions?accountId=${accountId}&limit=100&sortBy=date&sortOrder=desc`)
+      const response = await fetch(`/api/transactions?accountId=${accountId}&limit=10000&sortBy=date&sortOrder=desc`)
       const data = await response.json()
       
       if (data.success) {

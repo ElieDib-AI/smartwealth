@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AuthUser } from '@/lib/auth'
 import { RecurringTransaction, Account } from '@/lib/types'
 import { RecurringFormModal, RecurringFormData } from '@/components/recurring/recurring-form-modal'
@@ -23,13 +24,18 @@ export default function RecurringTransactionsPage() {
   const [loading, setLoading] = useState(true)
   const [recurringTransactions, setRecurringTransactions] = useState<(RecurringTransaction & { accountName?: string; toAccountName?: string })[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
+  const [executedDates, setExecutedDates] = useState<Map<string, Set<string>>>(new Map())
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [selectedRecurring, setSelectedRecurring] = useState<RecurringTransaction | null>(null)
   const [loanExecutionRecurring, setLoanExecutionRecurring] = useState<RecurringTransaction | null>(null)
   const [loanBreakdown, setLoanBreakdown] = useState<any>(null)
   const [showLoanDialog, setShowLoanDialog] = useState(false)
   const [executionRecurring, setExecutionRecurring] = useState<RecurringTransaction & { accountName?: string; toAccountName?: string } | null>(null)
+  const [executionDueDate, setExecutionDueDate] = useState<Date | null>(null)
   const [showExecutionDialog, setShowExecutionDialog] = useState(false)
+  const [deleteRecurringId, setDeleteRecurringId] = useState<string | null>(null)
+  const [deleteDueDate, setDeleteDueDate] = useState<Date | null>(null)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const hasCheckedRef = useRef(false)
 
   useEffect(() => {
@@ -59,14 +65,16 @@ export default function RecurringTransactionsPage() {
   const fetchData = async () => {
     setLoading(true)
     try {
-      // Fetch recurring transactions and accounts in parallel
-      const [recurringResponse, accountsResponse] = await Promise.all([
+      // Fetch all data in parallel - much more efficient!
+      const [recurringResponse, accountsResponse, executedDatesResponse] = await Promise.all([
         fetch('/api/recurring-transactions'),
-        fetch('/api/accounts')
+        fetch('/api/accounts'),
+        fetch('/api/recurring-transactions/executed-dates')
       ])
 
       const recurringData = await recurringResponse.json()
       const accountsData = await accountsResponse.json()
+      const executedDatesData = await executedDatesResponse.json()
 
       if (recurringData.success) {
         setRecurringTransactions(recurringData.data)
@@ -74,6 +82,15 @@ export default function RecurringTransactionsPage() {
 
       if (accountsData.success) {
         setAccounts(accountsData.data.accounts || [])
+      }
+
+      if (executedDatesData.success) {
+        // Convert the response object to a Map of Sets for efficient lookup
+        const executedMap = new Map<string, Set<string>>()
+        Object.entries(executedDatesData.data).forEach(([recurringId, dates]) => {
+          executedMap.set(recurringId, new Set(dates as string[]))
+        })
+        setExecutedDates(executedMap)
       }
     } catch (error) {
       console.error('Error fetching data:', error)
@@ -122,7 +139,7 @@ export default function RecurringTransactionsPage() {
     }
   }
 
-  const handleExecute = async (id: string) => {
+  const handleExecute = async (id: string, dueDate: Date) => {
     // Find the recurring transaction
     const recurring = recurringTransactions.find(r => r._id.toString() === id)
     
@@ -140,6 +157,7 @@ export default function RecurringTransactionsPage() {
         if (result.success) {
           setLoanExecutionRecurring(recurring)
           setLoanBreakdown(result.data.breakdown)
+          setExecutionDueDate(dueDate)
           setShowLoanDialog(true)
         } else {
           toast.error(result.error || 'Failed to calculate loan payment')
@@ -153,6 +171,7 @@ export default function RecurringTransactionsPage() {
 
     // For all other transactions, show confirmation dialog
     setExecutionRecurring(recurring)
+    setExecutionDueDate(dueDate)
     setShowExecutionDialog(true)
   }
 
@@ -165,7 +184,8 @@ export default function RecurringTransactionsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           principalAmount,
-          interestAmount
+          interestAmount,
+          date: executionDueDate ? executionDueDate.toISOString() : undefined
         })
       })
 
@@ -175,6 +195,7 @@ export default function RecurringTransactionsPage() {
         toast.success('Loan payment executed successfully')
         setShowLoanDialog(false)
         setLoanExecutionRecurring(null)
+        setExecutionDueDate(null)
         emitAccountUpdate() // Notify sidebar to refresh
         fetchData()
       } else {
@@ -221,20 +242,54 @@ export default function RecurringTransactionsPage() {
     }
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this recurring transaction?')) {
-      return
-    }
+  const handleDelete = async (id: string, dueDate: Date) => {
+    setDeleteRecurringId(id)
+    setDeleteDueDate(dueDate)
+    setShowDeleteDialog(true)
+  }
+
+  const handleSkipOccurrence = async () => {
+    if (!deleteRecurringId || !deleteDueDate) return
 
     try {
-      const response = await fetch(`/api/recurring-transactions/${id}`, {
+      const response = await fetch(`/api/recurring-transactions/${deleteRecurringId}/skip-date`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: deleteDueDate })
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        toast.success('Occurrence skipped successfully')
+        setShowDeleteDialog(false)
+        setDeleteRecurringId(null)
+        setDeleteDueDate(null)
+        fetchData()
+      } else {
+        toast.error(result.error || 'Failed to skip occurrence')
+      }
+    } catch (error) {
+      console.error('Error skipping occurrence:', error)
+      toast.error('Failed to skip occurrence')
+    }
+  }
+
+  const handleDeleteEntireSeries = async () => {
+    if (!deleteRecurringId) return
+
+    try {
+      const response = await fetch(`/api/recurring-transactions/${deleteRecurringId}`, {
         method: 'DELETE'
       })
 
       const result = await response.json()
 
       if (result.success) {
-        toast.success('Recurring transaction deleted')
+        toast.success('Recurring transaction series deleted')
+        setShowDeleteDialog(false)
+        setDeleteRecurringId(null)
+        setDeleteDueDate(null)
         fetchData()
       } else {
         toast.error(result.error || 'Failed to delete recurring transaction')
@@ -248,7 +303,7 @@ export default function RecurringTransactionsPage() {
   // Generate all occurrences for display
   const allOccurrences = useMemo(() => {
     const today = new Date()
-    today.setHours(0, 0, 0, 0)
+    const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()))
 
     const occurrences: Array<{
       recurringTransaction: RecurringTransaction & { accountName?: string; toAccountName?: string }
@@ -263,15 +318,24 @@ export default function RecurringTransactionsPage() {
         recurring.interval,
         recurring.intervalUnit,
         recurring.endDate ? new Date(recurring.endDate) : undefined,
-        recurring.lastExecutedAt ? new Date(recurring.lastExecutedAt) : undefined
+        recurring.lastExecutedAt ? new Date(recurring.lastExecutedAt) : undefined,
+        recurring.skippedDates
       )
 
+      // Get executed dates for this recurring transaction
+      const executedSet = executedDates.get(recurring._id.toString()) || new Set<string>()
+
       dates.forEach((date) => {
-        occurrences.push({
-          recurringTransaction: recurring,
-          dueDate: date,
-          showExecute: false // Will be determined below
-        })
+        // Check if this date has been executed
+        const dateISO = new Date(date).toISOString()
+        if (!executedSet.has(dateISO)) {
+          // Only add if not executed
+          occurrences.push({
+            recurringTransaction: recurring,
+            dueDate: date,
+            showExecute: false // Will be determined below
+          })
+        }
       })
     })
 
@@ -283,9 +347,8 @@ export default function RecurringTransactionsPage() {
     let foundFirstFuture = false
     occurrences.forEach((occurrence) => {
       const occurrenceDate = new Date(occurrence.dueDate)
-      occurrenceDate.setHours(0, 0, 0, 0)
       
-      if (occurrenceDate <= today) {
+      if (occurrenceDate <= todayUTC) {
         // Overdue or due today - show execute
         occurrence.showExecute = true
       } else if (!foundFirstFuture) {
@@ -299,7 +362,7 @@ export default function RecurringTransactionsPage() {
     })
 
     return occurrences
-  }, [recurringTransactions])
+  }, [recurringTransactions, executedDates])
 
   if (loading || !user) {
     return (
@@ -413,6 +476,68 @@ export default function RecurringTransactionsPage() {
             onConfirm={handleExecutionConfirm}
           />
         )}
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle>Delete Recurring Transaction</DialogTitle>
+              <DialogDescription>
+                This recurring transaction has multiple occurrences. What would you like to delete?
+              </DialogDescription>
+            </DialogHeader>
+            
+            {/* IMPORTANT: Always add px-6 to content between DialogHeader and DialogFooter */}
+            <div className="px-6 space-y-4 py-4">
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Choose one of the following options:
+                </p>
+                
+                <div className="space-y-2">
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-left h-auto py-4"
+                    onClick={handleSkipOccurrence}
+                  >
+                    <div className="flex flex-col items-start gap-1">
+                      <span className="font-semibold">Delete this occurrence only</span>
+                      <span className="text-xs text-muted-foreground">
+                        Skip this payment and keep future occurrences
+                      </span>
+                    </div>
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-left h-auto py-4 border-red-200 hover:bg-red-50"
+                    onClick={handleDeleteEntireSeries}
+                  >
+                    <div className="flex flex-col items-start gap-1">
+                      <span className="font-semibold text-red-600">Delete entire series</span>
+                      <span className="text-xs text-muted-foreground">
+                        Remove all future occurrences permanently
+                      </span>
+                    </div>
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setShowDeleteDialog(false)
+                  setDeleteRecurringId(null)
+                  setDeleteDueDate(null)
+                }}
+              >
+                Cancel
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   )

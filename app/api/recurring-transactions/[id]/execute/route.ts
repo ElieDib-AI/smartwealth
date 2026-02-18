@@ -5,6 +5,7 @@ import { getCollection } from '@/lib/database'
 import { RecurringTransaction, Transaction } from '@/lib/types'
 import { calculateNextDueDate } from '@/lib/utils/recurring'
 import { getNextPaymentBreakdown } from '@/lib/utils/loan-calculator'
+import { TransactionService } from '@/lib/services/transaction-service'
 
 // POST /api/recurring-transactions/[id]/execute - Execute a recurring transaction
 export async function POST(
@@ -51,6 +52,10 @@ export async function POST(
     }
 
     const now = new Date()
+    // Use the provided date (due date of the occurrence) or default to now
+    const transactionDate = date ? new Date(date) : now
+    // Store the original scheduled due date to track which occurrence was executed
+    const recurringDueDate = date ? new Date(date) : recurringTx.nextDueDate
     const createdTransactions: Transaction[] = []
 
     // Handle loan payments with auto-calculated splits
@@ -89,6 +94,7 @@ export async function POST(
         userId: user._id,
         type: 'transfer',
         amount: principal,
+        signedAmount: -principal,
         currency: recurringTx.currency,
         accountId: recurringTx.accountId,
         toAccountId: recurringTx.toAccountId,
@@ -96,15 +102,16 @@ export async function POST(
         category: 'Principal',
         description: `${recurringTx.description} - Principal`,
         notes: recurringTx.notes,
-        date: now,
+        date: transactionDate,
         createdAt: now,
         updatedAt: now,
         status: 'completed',
         isRecurring: true,
-        recurringId: recurringTx._id
+        recurringId: recurringTx._id,
+        recurringDueDate: recurringDueDate
       }
 
-      sourceRunningBalance -= principal
+      sourceRunningBalance += principalTransaction.signedAmount
       principalTransaction.runningBalance = sourceRunningBalance
 
       const principalResult = await transactionsCollection.insertOne(principalTransaction as Transaction)
@@ -128,20 +135,22 @@ export async function POST(
           userId: user._id,
           type: 'transfer',
           amount: principal,
+          signedAmount: principal,
           currency: recurringTx.currency,
           accountId: recurringTx.toAccountId,
           toAccountId: recurringTx.accountId,
-          transferDirection: 'in',
-          category: 'Principal',
-          description: `${recurringTx.description} - Principal`,
-          notes: recurringTx.notes,
-          date: now,
-          createdAt: now,
-          updatedAt: now,
+        transferDirection: 'in',
+        category: 'Principal',
+        description: `${recurringTx.description} - Principal`,
+        notes: recurringTx.notes,
+        date: transactionDate,
+        createdAt: now,
+        updatedAt: now,
           status: 'completed',
           runningBalance: loanRunningBalance,
           isRecurring: true,
-          recurringId: recurringTx._id
+          recurringId: recurringTx._id,
+          recurringDueDate: recurringDueDate
         }
 
         const loanInResult = await transactionsCollection.insertOne(loanInTransaction as Transaction)
@@ -154,20 +163,22 @@ export async function POST(
         userId: user._id,
         type: 'expense',
         amount: interest,
+        signedAmount: -interest,
         currency: recurringTx.currency,
         accountId: recurringTx.accountId,
         category: 'Interest',
         description: `${recurringTx.description} - Interest`,
         notes: recurringTx.notes,
-        date: now,
+        date: transactionDate,
         createdAt: now,
         updatedAt: now,
         status: 'completed',
         isRecurring: true,
-        recurringId: recurringTx._id
+        recurringId: recurringTx._id,
+        recurringDueDate: recurringDueDate
       }
 
-      sourceRunningBalance -= interest
+      sourceRunningBalance += interestTransaction.signedAmount
       interestTransaction.runningBalance = sourceRunningBalance
 
       const interestResult = await transactionsCollection.insertOne(interestTransaction as Transaction)
@@ -183,9 +194,9 @@ export async function POST(
           $set: { 
             'loanDetails.currentBalance': Math.max(0, newBalance),
             'loanDetails.lastCalculatedAt': now,
-            lastExecutedAt: now,
+            lastExecutedAt: transactionDate,
             nextDueDate: calculateNextDueDate(
-              recurringTx.nextDueDate,
+              transactionDate,
               recurringTx.frequency,
               recurringTx.interval,
               recurringTx.intervalUnit
@@ -219,22 +230,27 @@ export async function POST(
 
       // Create a transaction for each split part
       for (const split of recurringTx.splits) {
+        const splitType = split.type === 'transfer' ? 'transfer' : 'expense'
+        const signedAmount = splitType === 'transfer' ? -split.amount : -split.amount
+        
         const splitTransaction: Omit<Transaction, '_id'> = {
           userId: user._id,
-          type: split.type === 'transfer' ? 'transfer' : 'expense',
+          type: splitType,
           amount: split.amount,
+          signedAmount: signedAmount,
           currency: recurringTx.currency,
           accountId: recurringTx.accountId,
           toAccountId: split.toAccountId,
           category: split.category,
           description: split.description || `${recurringTx.description} - ${split.category}`,
           notes: recurringTx.notes,
-          date: now,
+          date: transactionDate,
           createdAt: now,
           updatedAt: now,
           status: 'completed',
           isRecurring: true,
-          recurringId: recurringTx._id
+          recurringId: recurringTx._id,
+          recurringDueDate: recurringDueDate
         }
 
         // Set transfer direction for transfers
@@ -243,7 +259,7 @@ export async function POST(
         }
 
         // Update running balance for source account
-        sourceRunningBalance -= split.amount
+        sourceRunningBalance += splitTransaction.signedAmount
         splitTransaction.runningBalance = sourceRunningBalance
 
         // Insert the split transaction
@@ -268,6 +284,7 @@ export async function POST(
             userId: user._id,
             type: 'transfer',
             amount: split.amount,
+            signedAmount: split.amount,
             currency: recurringTx.currency,
             accountId: split.toAccountId,
             toAccountId: recurringTx.accountId,
@@ -275,13 +292,14 @@ export async function POST(
             category: split.category,
             description: split.description || `${recurringTx.description} - ${split.category}`,
             notes: recurringTx.notes,
-            date: now,
+            date: transactionDate,
             createdAt: now,
             updatedAt: now,
             status: 'completed',
             runningBalance: destRunningBalance,
             isRecurring: true,
-            recurringId: recurringTx._id
+            recurringId: recurringTx._id,
+            recurringDueDate: recurringDueDate
           }
 
           await transactionsCollection.insertOne(destTransaction as Transaction)
@@ -295,10 +313,26 @@ export async function POST(
       const finalAccountId = accountId ? new ObjectId(accountId) : recurringTx.accountId
       const finalToAccountId = toAccountId ? new ObjectId(toAccountId) : recurringTx.toAccountId
       
+      const txAmount = amount !== undefined ? amount : recurringTx.amount
+      let signedAmount: number
+      
+      switch (recurringTx.type) {
+        case 'income':
+          signedAmount = txAmount
+          break
+        case 'expense':
+          signedAmount = -txAmount
+          break
+        case 'transfer':
+          signedAmount = -txAmount
+          break
+      }
+      
       const newTransaction: Omit<Transaction, '_id'> = {
         userId: user._id,
         type: recurringTx.type,
-        amount: amount !== undefined ? amount : recurringTx.amount,
+        amount: txAmount,
+        signedAmount: signedAmount,
         currency: recurringTx.currency,
         accountId: finalAccountId,
         toAccountId: finalToAccountId,
@@ -311,7 +345,8 @@ export async function POST(
         updatedAt: now,
         status: 'completed',
         isRecurring: true,
-        recurringId: recurringTx._id
+        recurringId: recurringTx._id,
+        recurringDueDate: recurringDueDate
       }
 
       // For transfers, set transferDirection
@@ -330,14 +365,7 @@ export async function POST(
 
       // Calculate running balance for the new transaction
       let runningBalance = latestTransaction?.runningBalance ?? 0
-      
-      if (newTransaction.type === 'income') {
-        runningBalance += newTransaction.amount
-      } else if (newTransaction.type === 'expense') {
-        runningBalance -= newTransaction.amount
-      } else if (newTransaction.type === 'transfer' && newTransaction.transferDirection === 'out') {
-        runningBalance -= newTransaction.amount
-      }
+      runningBalance += newTransaction.signedAmount
 
       // Insert the transaction with running balance
       newTransaction.runningBalance = runningBalance
@@ -358,6 +386,7 @@ export async function POST(
         userId: user._id,
         type: 'transfer',
         amount: transactionAmount,
+        signedAmount: transactionAmount,
         currency: recurringTx.currency,
         accountId: finalToAccountId,
         toAccountId: finalAccountId,
@@ -371,7 +400,8 @@ export async function POST(
         updatedAt: now,
         status: 'completed',
         isRecurring: true,
-        recurringId: recurringTx._id
+        recurringId: recurringTx._id,
+        recurringDueDate: recurringDueDate
       }
 
       // Get the latest transaction's running balance for destination account
@@ -385,16 +415,16 @@ export async function POST(
 
       // Calculate running balance for the destination account
       let toAccountBalance = latestToTransaction?.runningBalance ?? 0
-      toAccountBalance += transferInTransaction.amount
+      toAccountBalance += transferInTransaction.signedAmount
 
       // Insert the transfer-in transaction with running balance
       transferInTransaction.runningBalance = toAccountBalance
       await transactionsCollection.insertOne(transferInTransaction as Transaction)
     }
 
-    // Calculate next due date
+    // Calculate next due date based on the transaction date (not current time)
     const nextDueDate = calculateNextDueDate(
-      recurringTx.nextDueDate,
+      transactionDate,
       recurringTx.frequency,
       recurringTx.interval,
       recurringTx.intervalUnit
@@ -406,11 +436,45 @@ export async function POST(
       { 
         $set: { 
           nextDueDate,
-          lastExecutedAt: now,
+          lastExecutedAt: transactionDate,
           updatedAt: now
         } 
       }
     )
+
+    // Recalculate running balances for all affected accounts
+    // This ensures that if the transaction is backdated, all subsequent transactions are updated
+    const affectedAccounts = new Set<string>()
+    createdTransactions.forEach(tx => {
+      affectedAccounts.add(tx.accountId.toString())
+      if (tx.toAccountId) {
+        affectedAccounts.add(tx.toAccountId.toString())
+      }
+    })
+
+    // Trigger recalculation for each affected account
+    for (const accountIdStr of affectedAccounts) {
+      const accountId = new ObjectId(accountIdStr)
+      // Find the earliest transaction we created for this account
+      const earliestTx = createdTransactions
+        .filter(tx => 
+          tx.accountId.toString() === accountIdStr || 
+          tx.toAccountId?.toString() === accountIdStr
+        )
+        .sort((a, b) => {
+          const dateCompare = new Date(a.date).getTime() - new Date(b.date).getTime()
+          if (dateCompare !== 0) return dateCompare
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        })[0]
+      
+      if (earliestTx) {
+        await TransactionService.recalculateRunningBalancesFromTransaction(
+          accountId,
+          earliestTx._id,
+          null // No session since we're not in a transaction
+        )
+      }
+    }
 
     const updatedRecurring = await recurringCollection.findOne({ _id: recurringTx._id })
 
