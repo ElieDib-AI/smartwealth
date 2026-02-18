@@ -604,6 +604,26 @@ export class TransactionService {
         updatedAt: new Date()
       }
 
+      // If amount or type changed, recalculate signedAmount
+      if (updates.amount !== undefined || updates.type !== undefined) {
+        const newAmount = updates.amount ?? existingTransaction.amount
+        const newType = updates.type ?? existingTransaction.type
+        
+        switch (newType) {
+          case 'income':
+            updateDoc.signedAmount = newAmount
+            break
+          case 'expense':
+            updateDoc.signedAmount = -newAmount
+            break
+          case 'transfer':
+            // For transfers, check if this is the source or destination
+            // If toAccountId exists, this is the source (money out)
+            updateDoc.signedAmount = -newAmount
+            break
+        }
+      }
+
       const result = await transactionsCollection.findOneAndUpdate(
         { _id: transactionId, userId },
         { $set: updateDoc },
@@ -614,21 +634,42 @@ export class TransactionService {
         throw new Error('Failed to update transaction')
       }
 
-      // If balance-affecting, recalculate running balances from this transaction onwards
+      // If balance-affecting, recalculate running balances
       if (balanceAffectingUpdate && existingTransaction.status === 'completed') {
-        await this.recalculateRunningBalancesFromTransaction(existingTransaction.accountId, transactionId, session)
-        
-        // If account changed, also recalculate for the new account
-        if (updates.accountId && !updates.accountId.equals(existingTransaction.accountId)) {
-          await this.recalculateRunningBalancesFromTransaction(updates.accountId, transactionId, session)
-        }
-        
-        // If it's a transfer, recalculate for destination accounts too
-        if (existingTransaction.type === 'transfer' && existingTransaction.toAccountId) {
-          await this.recalculateRunningBalancesFromTransaction(existingTransaction.toAccountId, transactionId, session)
-        }
-        if (updates.toAccountId && existingTransaction.type === 'transfer') {
-          await this.recalculateRunningBalancesFromTransaction(updates.toAccountId, transactionId, session)
+        // If date changed, we need to recalculate the entire account
+        // because the transaction's position in the sort order has changed
+        if (updates.date !== undefined) {
+          // Recalculate entire account to ensure correct ordering
+          await this.recalculateAllRunningBalances(existingTransaction.accountId, session)
+          
+          // If account changed, also recalculate for the new account
+          if (updates.accountId && !updates.accountId.equals(existingTransaction.accountId)) {
+            await this.recalculateAllRunningBalances(updates.accountId, session)
+          }
+          
+          // If it's a transfer, recalculate for destination accounts too
+          if (existingTransaction.type === 'transfer' && existingTransaction.toAccountId) {
+            await this.recalculateAllRunningBalances(existingTransaction.toAccountId, session)
+          }
+          if (updates.toAccountId && existingTransaction.type === 'transfer') {
+            await this.recalculateAllRunningBalances(updates.toAccountId, session)
+          }
+        } else {
+          // For non-date changes, we can optimize by only recalculating from this transaction onwards
+          await this.recalculateRunningBalancesFromTransaction(existingTransaction.accountId, transactionId, session)
+          
+          // If account changed, also recalculate for the new account
+          if (updates.accountId && !updates.accountId.equals(existingTransaction.accountId)) {
+            await this.recalculateRunningBalancesFromTransaction(updates.accountId, transactionId, session)
+          }
+          
+          // If it's a transfer, recalculate for destination accounts too
+          if (existingTransaction.type === 'transfer' && existingTransaction.toAccountId) {
+            await this.recalculateRunningBalancesFromTransaction(existingTransaction.toAccountId, transactionId, session)
+          }
+          if (updates.toAccountId && existingTransaction.type === 'transfer') {
+            await this.recalculateRunningBalancesFromTransaction(updates.toAccountId, transactionId, session)
+          }
         }
       }
 
