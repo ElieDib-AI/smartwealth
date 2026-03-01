@@ -76,6 +76,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
   const [showTransactionModal, setShowTransactionModal] = useState(false)
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [displayLimit, setDisplayLimit] = useState<number>(20)
   const hasCheckedRef = useRef(false)
 
   const fetchAccount = async () => {
@@ -446,10 +447,58 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
         >
           <Card>
             <CardHeader>
-              <CardTitle>Recent Transactions</CardTitle>
-              <CardDescription>
-                Your latest account activity
-              </CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Recent Transactions</CardTitle>
+                  <CardDescription>
+                    {transactions.length === 0 
+                      ? 'Your latest account activity'
+                      : displayLimit >= transactions.length
+                        ? `Showing all ${transactions.length} transactions`
+                        : `Showing last ${displayLimit} of ${transactions.length} transactions`
+                    }
+                  </CardDescription>
+                </div>
+                {transactions.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Show:</span>
+                    <div className="flex gap-1">
+                      <Button
+                        variant={displayLimit === 20 ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setDisplayLimit(20)}
+                        className={displayLimit === 20 ? "bg-gradient-to-r from-emerald-600 to-green-500" : ""}
+                      >
+                        20
+                      </Button>
+                      <Button
+                        variant={displayLimit === 50 ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setDisplayLimit(50)}
+                        className={displayLimit === 50 ? "bg-gradient-to-r from-emerald-600 to-green-500" : ""}
+                      >
+                        50
+                      </Button>
+                      <Button
+                        variant={displayLimit === 100 ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setDisplayLimit(100)}
+                        className={displayLimit === 100 ? "bg-gradient-to-r from-emerald-600 to-green-500" : ""}
+                      >
+                        100
+                      </Button>
+                      <Button
+                        variant={displayLimit >= transactions.length ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setDisplayLimit(transactions.length)}
+                        className={displayLimit >= transactions.length ? "bg-gradient-to-r from-emerald-600 to-green-500" : ""}
+                      >
+                        All
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               {loadingTransactions ? (
@@ -469,7 +518,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {transactions.map((transaction) => (
+                  {transactions.slice(0, displayLimit).map((transaction) => (
                     <TransactionListItem
                       key={transaction._id.toString()}
                       transaction={transaction}
