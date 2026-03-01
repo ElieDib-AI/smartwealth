@@ -21,6 +21,8 @@ interface LoanExecutionDialogProps {
   breakdown: PaymentBreakdown
   currency: string
   loanAccountName: string
+  sourceAccountBalance: number
+  loanAccountBalance?: number // Optional: actual loan account balance from DB
   onConfirm: (principalAmount: number, interestAmount: number) => Promise<void>
 }
 
@@ -30,6 +32,8 @@ export function LoanExecutionDialog({
   breakdown,
   currency,
   loanAccountName,
+  sourceAccountBalance,
+  loanAccountBalance,
   onConfirm
 }: LoanExecutionDialogProps) {
   const [principalAmount, setPrincipalAmount] = useState(breakdown.principal)
@@ -44,7 +48,13 @@ export function LoanExecutionDialog({
   }
 
   const totalAmount = principalAmount + interestAmount
-  const newBalance = breakdown.remainingBalance - (principalAmount - breakdown.principal)
+  const newAccountBalance = sourceAccountBalance - totalAmount
+  
+  // Use actual loan account balance if provided, otherwise use breakdown.currentBalance
+  const currentLoanBalance = loanAccountBalance !== undefined 
+    ? Math.abs(loanAccountBalance) // Loan accounts are stored as negative (liability)
+    : breakdown.currentBalance
+  const newLoanBalance = currentLoanBalance - principalAmount
 
   const handleConfirm = async () => {
     setLoading(true)
@@ -110,7 +120,7 @@ export function LoanExecutionDialog({
             </div>
           </div>
 
-          {/* Summary */}
+          {/* Account Balance Summary */}
           <div className="space-y-2 pt-4 border-t border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-600 dark:text-gray-400">Total Payment</span>
@@ -121,13 +131,29 @@ export function LoanExecutionDialog({
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-600 dark:text-gray-400">Current Balance</span>
               <span className="font-medium text-gray-700 dark:text-gray-300">
-                {formatCurrency(breakdown.remainingBalance)}
+                {formatCurrency(sourceAccountBalance)}
               </span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-600 dark:text-gray-400">New Balance</span>
               <span className="font-semibold text-green-600 dark:text-green-400">
-                {formatCurrency(newBalance)}
+                {formatCurrency(newAccountBalance)}
+              </span>
+            </div>
+          </div>
+
+          {/* Loan Balance Summary */}
+          <div className="space-y-2 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600 dark:text-gray-400">Current Loan Balance</span>
+              <span className="font-medium text-gray-700 dark:text-gray-300">
+                {formatCurrency(currentLoanBalance)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600 dark:text-gray-400">New Loan Balance</span>
+              <span className="font-semibold text-blue-600 dark:text-blue-400">
+                {formatCurrency(newLoanBalance)}
               </span>
             </div>
           </div>
@@ -136,7 +162,7 @@ export function LoanExecutionDialog({
           <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
             <p className="text-xs text-gray-600 dark:text-gray-400">
               Payment #{breakdown.paymentNumber} • 
-              {' '}{((breakdown.remainingBalance - newBalance) / breakdown.remainingBalance * 100).toFixed(1)}% of balance paid
+              {' '}{((principalAmount / currentLoanBalance) * 100).toFixed(2)}% of loan balance paid
             </p>
           </div>
         </div>

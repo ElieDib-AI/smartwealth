@@ -65,6 +65,7 @@ export type AccountType =
   | 'retirement'
   | 'crypto'
   | 'mutual_funds'
+  | 'precious_metals'
   // Assets
   | 'real_estate'
   | 'vehicle'
@@ -84,6 +85,8 @@ export interface Account {
   icon: string // lucide icon name
   isActive: boolean
   displayOrder?: number // for custom ordering via drag and drop
+  autoSync?: boolean // Enable automatic price sync for investment accounts
+  lastSyncedAt?: Date // When prices were last fetched from Alpha Vantage
   createdAt: Date
   updatedAt: Date
 }
@@ -211,8 +214,7 @@ export interface RecurringTransaction {
     interestRate: number         // Annual interest rate (e.g., 5.5 for 5.5%)
     termMonths: number           // Loan term in months
     startDate: Date              // When loan started
-    currentBalance?: number      // Calculated remaining balance
-    lastCalculatedAt?: Date      // When balance was last calculated
+    // Note: Current balance is read from the loan account (toAccountId) - single source of truth
   }
   
   // Frequency Configuration
@@ -235,6 +237,38 @@ export interface RecurringTransaction {
   createdAt: Date
   updatedAt: Date
   lastExecutedAt?: Date
+}
+
+// Asset tracking types
+export type AssetType = 'stock' | 'metal' | 'forex' | 'crypto'
+
+export interface AssetHolding {
+  _id: ObjectId
+  userId: ObjectId
+  accountId: ObjectId
+  symbol: string
+  assetType: AssetType
+  quantity: number
+  displayCurrency: string
+  secondaryCurrency?: string
+  purchasePrice?: number
+  purchaseDate?: Date
+  notes?: string
+  // For metals: store original quantity and unit
+  originalQuantity?: number
+  originalUnit?: 'oz' | 'g'
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface AssetPrice {
+  _id: ObjectId
+  symbol: string
+  assetType: AssetType
+  price: number
+  currency: string
+  lastUpdated: Date
+  source: 'alpha_vantage'
 }
 
 // API Response types

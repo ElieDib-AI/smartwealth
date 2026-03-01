@@ -79,7 +79,8 @@ const accountCategories = [
       { value: 'stocks' as AccountType, label: 'Stocks & Shares', icon: LineChart },
       { value: 'retirement' as AccountType, label: 'Retirement Account', icon: PiggyBank },
       { value: 'crypto' as AccountType, label: 'Crypto', icon: Bitcoin },
-      { value: 'mutual_funds' as AccountType, label: 'Mutual Funds', icon: TrendingUp }
+      { value: 'mutual_funds' as AccountType, label: 'Mutual Funds', icon: TrendingUp },
+      { value: 'precious_metals' as AccountType, label: 'Precious Metals', icon: Gem }
     ]
   },
   {
@@ -120,6 +121,7 @@ const accountIconsByType: Record<AccountType, string> = {
   retirement: 'PiggyBank',
   crypto: 'Bitcoin',
   mutual_funds: 'TrendingUp',
+  precious_metals: 'Gem',
   // Assets
   real_estate: 'Home',
   vehicle: 'Car',

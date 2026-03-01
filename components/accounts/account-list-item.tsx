@@ -51,6 +51,7 @@ const accountIcons: Record<AccountType, typeof Wallet> = {
   retirement: PiggyBank,
   crypto: Bitcoin,
   mutual_funds: TrendingUp,
+  precious_metals: Gem,
   // Assets
   real_estate: Home,
   vehicle: Car,
@@ -74,6 +75,7 @@ const accountGradients: Record<AccountType, string> = {
   retirement: 'from-indigo-600 to-purple-500',
   crypto: 'from-indigo-600 to-purple-500',
   mutual_funds: 'from-indigo-600 to-purple-500',
+  precious_metals: 'from-amber-600 to-orange-500',
   // Assets
   real_estate: 'from-emerald-600 to-green-500',
   vehicle: 'from-emerald-600 to-green-500',

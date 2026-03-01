@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogBody, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AuthUser } from '@/lib/auth'
 import { RecurringTransaction, Account } from '@/lib/types'
 import { RecurringFormModal, RecurringFormData } from '@/components/recurring/recurring-form-modal'
@@ -306,7 +306,11 @@ export default function RecurringTransactionsPage() {
     const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()))
 
     const occurrences: Array<{
-      recurringTransaction: RecurringTransaction & { accountName?: string; toAccountName?: string }
+      recurringTransaction: RecurringTransaction & { 
+        accountName?: string
+        toAccountName?: string
+        loanAccountBalance?: number
+      }
       dueDate: Date
       showExecute: boolean
     }> = []
@@ -329,9 +333,26 @@ export default function RecurringTransactionsPage() {
         // Check if this date has been executed
         const dateISO = new Date(date).toISOString()
         if (!executedSet.has(dateISO)) {
-          // Only add if not executed
+          // Enrich with account names and loan balance
+          const accountName = accounts.find(a => a._id.toString() === recurring.accountId.toString())?.name
+          const toAccountName = recurring.toAccountId 
+            ? accounts.find(a => a._id.toString() === recurring.toAccountId!.toString())?.name
+            : undefined
+          
+          // For loan payments, get the actual loan account balance
+          let loanAccountBalance: number | undefined
+          if (recurring.loanDetails && recurring.toAccountId) {
+            const loanAccount = accounts.find(a => a._id.toString() === recurring.toAccountId!.toString())
+            loanAccountBalance = loanAccount?.balance
+          }
+          
           occurrences.push({
-            recurringTransaction: recurring,
+            recurringTransaction: {
+              ...recurring,
+              accountName,
+              toAccountName,
+              loanAccountBalance
+            },
             dueDate: date,
             showExecute: false // Will be determined below
           })
@@ -462,6 +483,14 @@ export default function RecurringTransactionsPage() {
                 ? accounts.find(a => a._id.toString() === loanExecutionRecurring.toAccountId?.toString())?.name || 'Loan Account'
                 : 'Loan Account'
             }
+            sourceAccountBalance={
+              accounts.find(a => a._id.toString() === loanExecutionRecurring.accountId.toString())?.balance || 0
+            }
+            loanAccountBalance={
+              loanExecutionRecurring.toAccountId
+                ? accounts.find(a => a._id.toString() === loanExecutionRecurring.toAccountId!.toString())?.balance
+                : undefined
+            }
             onConfirm={handleLoanExecutionConfirm}
           />
         )}
@@ -487,8 +516,7 @@ export default function RecurringTransactionsPage() {
               </DialogDescription>
             </DialogHeader>
             
-            {/* IMPORTANT: Always add px-6 to content between DialogHeader and DialogFooter */}
-            <div className="px-6 space-y-4 py-4">
+            <DialogBody className="space-y-4">
               <div className="space-y-3">
                 <p className="text-sm text-muted-foreground">
                   Choose one of the following options:
@@ -522,7 +550,7 @@ export default function RecurringTransactionsPage() {
                   </Button>
                 </div>
               </div>
-            </div>
+            </DialogBody>
 
             <DialogFooter>
               <Button

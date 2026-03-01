@@ -36,6 +36,7 @@ export async function POST(
 
     const recurringCollection = await getCollection<RecurringTransaction>('recurring_transactions')
     const transactionsCollection = await getCollection<Transaction>('transactions')
+    const accountsCollection = await getCollection('accounts')
     
     // Fetch the recurring transaction
     const recurringTx = await recurringCollection.findOne({
@@ -185,15 +186,11 @@ export async function POST(
       const createdInterest = await transactionsCollection.findOne({ _id: interestResult.insertedId })
       if (createdInterest) createdTransactions.push(createdInterest)
 
-      // Update loan balance
-      const newBalance = (recurringTx.loanDetails.currentBalance || recurringTx.loanDetails.originalAmount) - principal
-
+      // Update recurring transaction (loan balance is tracked in the loan account, not here)
       await recurringCollection.updateOne(
         { _id: recurringTx._id },
         { 
           $set: { 
-            'loanDetails.currentBalance': Math.max(0, newBalance),
-            'loanDetails.lastCalculatedAt': now,
             lastExecutedAt: transactionDate,
             nextDueDate: calculateNextDueDate(
               transactionDate,
@@ -206,11 +203,17 @@ export async function POST(
         }
       )
 
+      // Fetch the updated loan account balance (single source of truth)
+      const updatedLoanAccount = await accountsCollection.findOne({
+        _id: recurringTx.toAccountId,
+        userId: user._id
+      })
+
       return NextResponse.json({
         success: true,
         data: {
           transactions: createdTransactions,
-          newLoanBalance: Math.max(0, newBalance)
+          newLoanBalance: updatedLoanAccount ? Math.abs(updatedLoanAccount.balance) : 0
         }
       })
     }

@@ -14,7 +14,8 @@ export interface PaymentBreakdown {
   totalPayment: number
   principal: number
   interest: number
-  remainingBalance: number
+  currentBalance: number // Balance before this payment
+  remainingBalance: number // Balance after this payment
 }
 
 /**
@@ -95,7 +96,8 @@ export function calculatePaymentBreakdown(
     totalPayment: principal + interest,
     principal,
     interest,
-    remainingBalance
+    currentBalance: balance, // Balance before payment
+    remainingBalance // Balance after payment
   }
 }
 
@@ -160,6 +162,7 @@ export function generateAmortizationSchedule(
   const loanStartDate = new Date(startDate)
 
   for (let i = 1; i <= termMonths; i++) {
+    const currentBalance = balance
     const interest = balance * monthlyRate
     const principal = Math.min(monthlyPayment - interest, balance)
     balance = Math.max(0, balance - principal)
@@ -174,6 +177,7 @@ export function generateAmortizationSchedule(
       totalPayment: principal + interest,
       principal,
       interest,
+      currentBalance,
       remainingBalance: balance
     })
 
@@ -231,6 +235,7 @@ export function calculatePaymentsMade(
  * 
  * @param loanDetails - Loan details object
  * @param lastExecutedAt - When the last payment was executed
+ * @param loanAccountBalance - Current balance from the loan account (single source of truth)
  * @returns Next payment breakdown
  */
 export function getNextPaymentBreakdown(
@@ -239,9 +244,9 @@ export function getNextPaymentBreakdown(
     interestRate: number
     termMonths: number
     startDate: Date
-    currentBalance?: number
   },
-  lastExecutedAt?: Date
+  lastExecutedAt?: Date,
+  loanAccountBalance?: number
 ): PaymentBreakdown {
   const paymentsMade = lastExecutedAt 
     ? calculatePaymentsMade(loanDetails.startDate, lastExecutedAt)
@@ -249,11 +254,16 @@ export function getNextPaymentBreakdown(
 
   const nextPaymentNumber = paymentsMade + 1
 
+  // Use loan account balance (absolute value since loans are stored as negative)
+  const currentBalance = loanAccountBalance !== undefined 
+    ? Math.abs(loanAccountBalance)
+    : undefined
+
   return calculatePaymentBreakdown(
     loanDetails.originalAmount,
     loanDetails.interestRate,
     loanDetails.termMonths,
     nextPaymentNumber,
-    loanDetails.currentBalance
+    currentBalance
   )
 }

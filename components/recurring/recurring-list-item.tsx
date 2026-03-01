@@ -17,7 +17,11 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/lib/utils'
 
 interface RecurringListItemProps {
-  recurringTransaction: RecurringTransaction & { accountName?: string; toAccountName?: string }
+  recurringTransaction: RecurringTransaction & { 
+    accountName?: string
+    toAccountName?: string
+    loanAccountBalance?: number
+  }
   onExecute: (id: string, dueDate: Date) => void
   onEdit: (recurringTransaction: RecurringTransaction) => void
   onDelete: (id: string, dueDate: Date) => void
@@ -116,11 +120,20 @@ export function RecurringListItem({
           {recurringTransaction.isSplit && recurringTransaction.loanDetails && (
             <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-500 mt-1">
               <span>
-                Balance: {formatCurrency(recurringTransaction.loanDetails.currentBalance || recurringTransaction.loanDetails.originalAmount, recurringTransaction.currency)} remaining
+                Balance: {formatCurrency(
+                  recurringTransaction.loanAccountBalance !== undefined 
+                    ? Math.abs(recurringTransaction.loanAccountBalance)
+                    : recurringTransaction.loanDetails.originalAmount, 
+                  recurringTransaction.currency
+                )} remaining
               </span>
               <span>•</span>
               <span>
-                {Math.round(((recurringTransaction.loanDetails.originalAmount - (recurringTransaction.loanDetails.currentBalance || recurringTransaction.loanDetails.originalAmount)) / recurringTransaction.loanDetails.originalAmount) * 100)}% paid off
+                {Math.round(((recurringTransaction.loanDetails.originalAmount - (
+                  recurringTransaction.loanAccountBalance !== undefined 
+                    ? Math.abs(recurringTransaction.loanAccountBalance)
+                    : recurringTransaction.loanDetails.originalAmount
+                )) / recurringTransaction.loanDetails.originalAmount) * 100)}% paid off
               </span>
             </div>
           )}

@@ -123,7 +123,7 @@ export async function PUT(
     const validTypes = [
       'checking', 'savings', 'cash',
       'credit_card', 'personal_loan', 'mortgage', 'car_loan', 'student_loan',
-      'stocks', 'retirement', 'crypto', 'mutual_funds',
+      'stocks', 'retirement', 'crypto', 'mutual_funds', 'precious_metals',
       'real_estate', 'vehicle', 'valuables', 'other_assets'
     ]
     if (!validTypes.includes(type)) {

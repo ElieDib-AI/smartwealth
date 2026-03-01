@@ -40,6 +40,7 @@ export async function GET(
     }
 
     const recurringCollection = await getCollection<RecurringTransaction>('recurring_transactions')
+    const accountsCollection = await getCollection('accounts')
     
     // Fetch the recurring transaction
     const recurringTx = await recurringCollection.findOne({
@@ -63,6 +64,18 @@ export async function GET(
       )
     }
 
+    // Fetch the loan account balance (single source of truth)
+    let currentBalance = recurringTx.loanDetails.originalAmount
+    if (recurringTx.toAccountId) {
+      const loanAccount = await accountsCollection.findOne({
+        _id: recurringTx.toAccountId,
+        userId: user._id
+      })
+      if (loanAccount) {
+        currentBalance = Math.abs(loanAccount.balance) // Loans are stored as negative
+      }
+    }
+
     // Generate full amortization schedule
     const fullSchedule = generateAmortizationSchedule(
       recurringTx.loanDetails.originalAmount,
@@ -84,9 +97,6 @@ export async function GET(
     const totalPrincipal = futurePayments.reduce((sum, p) => sum + p.principal, 0)
     const totalInterest = futurePayments.reduce((sum, p) => sum + p.interest, 0)
     const totalPayments = futurePayments.reduce((sum, p) => sum + p.totalPayment, 0)
-
-    // Calculate overall loan statistics
-    const currentBalance = recurringTx.loanDetails.currentBalance || recurringTx.loanDetails.originalAmount
     const totalPaid = recurringTx.loanDetails.originalAmount - currentBalance
     const percentComplete = (totalPaid / recurringTx.loanDetails.originalAmount) * 100
     const remainingPayments = recurringTx.loanDetails.termMonths - paymentsMade

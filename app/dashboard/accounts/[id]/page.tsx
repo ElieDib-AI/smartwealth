@@ -37,6 +37,7 @@ import { toast } from 'sonner'
 import { emitAccountUpdate } from '@/lib/events/account-events'
 import { TransactionFormModal, TransactionFormData } from '@/components/transactions/transaction-form-modal'
 import { TransactionListItem } from '@/components/transactions/transaction-list-item'
+import { HoldingsManager } from '@/components/assets/holdings-manager'
 
 const accountIcons: Record<AccountType, typeof Wallet> = {
   // Bank Accounts
@@ -54,6 +55,7 @@ const accountIcons: Record<AccountType, typeof Wallet> = {
   retirement: PiggyBank,
   crypto: Bitcoin,
   mutual_funds: TrendingUp,
+  precious_metals: Gem,
   // Assets
   real_estate: Home,
   vehicle: Car,
@@ -439,11 +441,26 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
           </motion.div>
         </div>
 
+        {/* Investment Holdings (for investment accounts only) */}
+        {['stocks', 'retirement', 'crypto', 'mutual_funds', 'precious_metals'].includes(account.type) && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.4 }}
+          >
+            <HoldingsManager 
+              accountId={resolvedParams.id} 
+              accountCurrency={account.currency}
+              onBalanceUpdate={fetchAccount}
+            />
+          </motion.div>
+        )}
+
         {/* Recent Transactions */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.4 }}
+          transition={{ duration: 0.3, delay: 0.5 }}
         >
           <Card>
             <CardHeader>

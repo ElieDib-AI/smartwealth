@@ -29,6 +29,7 @@ export async function POST(
     }
 
     const recurringCollection = await getCollection<RecurringTransaction>('recurring_transactions')
+    const accountsCollection = await getCollection('accounts')
     
     // Fetch the recurring transaction
     const recurringTx = await recurringCollection.findOne({
@@ -52,10 +53,21 @@ export async function POST(
       )
     }
 
+    // Fetch the loan account balance (single source of truth)
+    let loanAccountBalance: number | undefined
+    if (recurringTx.toAccountId) {
+      const loanAccount = await accountsCollection.findOne({
+        _id: recurringTx.toAccountId,
+        userId: user._id
+      })
+      loanAccountBalance = loanAccount?.balance
+    }
+
     // Calculate the next payment breakdown
     const breakdown = getNextPaymentBreakdown(
       recurringTx.loanDetails,
-      recurringTx.lastExecutedAt
+      recurringTx.lastExecutedAt,
+      loanAccountBalance
     )
 
     // Calculate how many payments have been made

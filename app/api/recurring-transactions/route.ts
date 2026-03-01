@@ -207,21 +207,9 @@ export async function POST(request: NextRequest) {
 
     const now = new Date()
     
-    // For loan payments, fetch the current balance from the linked loan account
-    let loanCurrentBalance = body.loanDetails?.originalAmount
     let calculatedEndDate = body.endDate ? new Date(body.endDate) : undefined
     
-    if (body.type === 'loan_payment' && body.toAccountId && body.loanDetails) {
-      const { getCollection: getAccountCollection } = await import('@/lib/database')
-      const accountsCollection = await getAccountCollection('accounts')
-      const loanAccount = await accountsCollection.findOne({
-        _id: new ObjectId(body.toAccountId),
-        userId: user._id
-      })
-      if (loanAccount) {
-        loanCurrentBalance = Math.abs(loanAccount.balance) // Use absolute value since loan accounts might be negative
-      }
-      
+    if (body.type === 'loan_payment' && body.loanDetails) {
       // Calculate end date based on loan term (loan start date + term months)
       const loanStartDate = new Date(body.loanDetails.startDate)
       const loanEndDate = new Date(loanStartDate)
@@ -256,9 +244,7 @@ export async function POST(request: NextRequest) {
         originalAmount: body.loanDetails.originalAmount,
         interestRate: body.loanDetails.interestRate,
         termMonths: body.loanDetails.termMonths,
-        startDate: new Date(body.loanDetails.startDate),
-        currentBalance: loanCurrentBalance, // Use actual loan account balance
-        lastCalculatedAt: now
+        startDate: new Date(body.loanDetails.startDate)
       } : undefined,
       frequency: body.frequency,
       interval: body.interval,
